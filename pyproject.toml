@@ -1,0 +1,25 @@
+[project]
+name = "cutileGPT"
+version = "0.1.0"
+description = "GPT implementation using NVIDIA cutile for optimized CUDA kernels"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+    "torchaudio>=2.10.0",
+    "cupy-cuda13x>=13.6.0",
+    "cuda-tile>=1.0.1",
+    "numpy>=2.3.5",
+    "pytest>=9.0.2",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu130" }
+torchvision = { index = "pytorch-cu130" }
+torchaudio = { index = "pytorch-cu130" }

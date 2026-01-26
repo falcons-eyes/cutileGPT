@@ -1,0 +1,6 @@
+[submodule "external/cutile-python"]
+	path = external/cutile-python
+	url = https://github.com/NVIDIA/cutile-python.git
+[submodule "external/minGPT"]
+	path = external/minGPT
+	url = https://github.com/karpathy/minGPT.git

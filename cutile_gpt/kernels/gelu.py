@@ -1,0 +1,149 @@
+# SPDX-License-Identifier: Apache-2.0
+"""
+GELU activation function kernel for cutile GPT.
+
+Implements the approximate GELU used in GPT-2:
+    GELU(x) = 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+"""
+
+import math
+import torch
+import cuda.tile as ct
+
+ConstInt = ct.Constant[int]
+
+# Constants for GELU approximation
+SQRT_2_OVER_PI = math.sqrt(2.0 / math.pi)  # ~0.7978845608
+GELU_COEF = 0.044715
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def gelu_kernel(X, Y, TILE_SIZE: ConstInt):
+    """
+    Element-wise GELU activation kernel.
+
+    Args:
+        X: Input tensor (flattened to 1D for processing)
+        Y: Output tensor (same shape as X)
+        TILE_SIZE: Number of elements processed per block
+    """
+    bid = ct.bid(0)
+
+    # Load input tile
+    x = ct.load(X, index=(bid,), shape=(TILE_SIZE,), padding_mode=ct.PaddingMode.ZERO)
+
+    # GELU approximation: 0.5 * x * (1 + tanh(sqrt(2/pi) * (x + 0.044715 * x^3)))
+    x_cubed = x * x * x
+    inner = SQRT_2_OVER_PI * (x + GELU_COEF * x_cubed)
+    y = 0.5 * x * (1.0 + ct.tanh(inner))
+
+    # Store result
+    ct.store(Y, index=(bid,), tile=y.astype(Y.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def gelu_kernel_2d(X, Y, TILE_M: ConstInt, TILE_N: ConstInt):
+    """
+    2D GELU activation kernel for matrices.
+
+    Args:
+        X: Input tensor (M, N)
+        Y: Output tensor (M, N)
+        TILE_M: Tile size along M dimension
+        TILE_N: Tile size along N dimension
+    """
+    bid_m = ct.bid(0)
+    bid_n = ct.bid(1)
+
+    # Load input tile
+    x = ct.load(X, index=(bid_m, bid_n), shape=(TILE_M, TILE_N),
+                padding_mode=ct.PaddingMode.ZERO)
+
+    # GELU approximation
+    x_cubed = x * x * x
+    inner = SQRT_2_OVER_PI * (x + GELU_COEF * x_cubed)
+    y = 0.5 * x * (1.0 + ct.tanh(inner))
+
+    # Store result
+    ct.store(Y, index=(bid_m, bid_n), tile=y.astype(Y.dtype))
+
+
+def cutile_gelu(x: torch.Tensor) -> torch.Tensor:
+    """
+    Apply GELU activation using cutile kernel.
+
+    Args:
+        x: Input tensor of any shape
+
+    Returns:
+        Output tensor with GELU applied element-wise
+    """
+    if not x.is_cuda:
+        raise ValueError("Input tensor must be on CUDA device")
+
+    # For 2D tensors, use 2D kernel
+    if x.ndim == 2:
+        M, N = x.shape
+        y = torch.empty_like(x)
+
+        TILE_M, TILE_N = 32, 128
+        grid_m = math.ceil(M / TILE_M)
+        grid_n = math.ceil(N / TILE_N)
+        grid = (grid_m, grid_n, 1)
+
+        ct.launch(torch.cuda.current_stream(), grid, gelu_kernel_2d,
+                  (x, y, TILE_M, TILE_N))
+        return y
+
+    # For other shapes, flatten and use 1D kernel
+    original_shape = x.shape
+    x_flat = x.reshape(-1)
+    y_flat = torch.empty_like(x_flat)
+
+    TILE_SIZE = 1024
+    num_elements = x_flat.numel()
+    grid = (math.ceil(num_elements / TILE_SIZE), 1, 1)
+
+    ct.launch(torch.cuda.current_stream(), grid, gelu_kernel,
+              (x_flat, y_flat, TILE_SIZE))
+
+    return y_flat.reshape(original_shape)
+
+
+# Reference PyTorch implementation for testing
+def torch_gelu(x: torch.Tensor) -> torch.Tensor:
+    """PyTorch reference GELU (approximate version matching GPT-2)"""
+    return 0.5 * x * (1.0 + torch.tanh(SQRT_2_OVER_PI * (x + GELU_COEF * torch.pow(x, 3.0))))
+
+
+if __name__ == "__main__":
+    print("--- Testing cutile GELU kernel ---")
+
+    # Test 1D
+    x = torch.randn(1024, dtype=torch.float32, device='cuda')
+    y_cutile = cutile_gelu(x)
+    y_torch = torch_gelu(x)
+
+    print(f"1D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
+    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print("1D Test passed!")
+
+    # Test 2D
+    x = torch.randn(128, 256, dtype=torch.float32, device='cuda')
+    y_cutile = cutile_gelu(x)
+    y_torch = torch_gelu(x)
+
+    print(f"2D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
+    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print("2D Test passed!")
+
+    # Test 3D (typical transformer shape: batch, seq, hidden)
+    x = torch.randn(2, 64, 48, dtype=torch.float32, device='cuda')
+    y_cutile = cutile_gelu(x)
+    y_torch = torch_gelu(x)
+
+    print(f"3D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
+    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print("3D Test passed!")
+
+    print("\n--- All GELU tests passed! ---")

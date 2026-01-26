@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Profiling files
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# pytest
+.pytest_cache/
+
+# uv
+uv.lock
+
+# Claude
+.claude/
