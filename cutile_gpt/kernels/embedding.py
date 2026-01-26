@@ -7,7 +7,7 @@ We pad n_embd to next power of 2, then slice back.
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 
 ConstInt = ct.Constant[int]
@@ -51,7 +51,7 @@ def embedding_kernel(indices, weight, output, TILE_SEQ: ConstInt, N_EMBD_PADDED:
     ct.store(output, index=(bid, 0), tile=emb.astype(output.dtype))
 
 
-def cutile_embedding(indices: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+def cutile_embedding(indices: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
     """
     Perform embedding lookup using cutile kernel.
 
@@ -64,8 +64,8 @@ def cutile_embedding(indices: torch.Tensor, weight: torch.Tensor) -> torch.Tenso
     Returns:
         Embeddings tensor (batch, seq_len, n_embd) or (seq_len, n_embd)
     """
-    if not indices.is_cuda or not weight.is_cuda:
-        raise ValueError("Tensors must be on CUDA device")
+    if not isinstance(indices, cp.ndarray) or not isinstance(weight, cp.ndarray):
+        raise ValueError("Tensors must be CuPy arrays on CUDA device")
 
     original_shape = indices.shape
     vocab_size, n_embd = weight.shape
@@ -76,15 +76,14 @@ def cutile_embedding(indices: torch.Tensor, weight: torch.Tensor) -> torch.Tenso
 
     if needs_padding:
         # Pad weight matrix: (vocab_size, n_embd) -> (vocab_size, n_embd_padded)
-        weight_padded = torch.zeros(vocab_size, n_embd_padded,
-                                    dtype=weight.dtype, device=weight.device)
+        weight_padded = cp.zeros((vocab_size, n_embd_padded), dtype=weight.dtype)
         weight_padded[:, :n_embd] = weight
     else:
         weight_padded = weight
 
     # Flatten indices
-    indices_flat = indices.reshape(-1).to(torch.int32)
-    total_tokens = indices_flat.numel()
+    indices_flat = cp.reshape(indices, -1).astype(cp.int32)
+    total_tokens = indices_flat.size
 
     # Tile size for sequence (also power of 2)
     TILE_SEQ = min(64, next_power_of_2(total_tokens))
@@ -92,31 +91,30 @@ def cutile_embedding(indices: torch.Tensor, weight: torch.Tensor) -> torch.Tenso
     # Pad total_tokens to multiple of TILE_SEQ
     padded_tokens = math.ceil(total_tokens / TILE_SEQ) * TILE_SEQ
     if padded_tokens > total_tokens:
-        indices_padded = torch.zeros(padded_tokens, dtype=torch.int32, device=indices.device)
+        indices_padded = cp.zeros(padded_tokens, dtype=cp.int32)
         indices_padded[:total_tokens] = indices_flat
         indices_flat = indices_padded
 
     # Output
-    output = torch.empty(padded_tokens, n_embd_padded,
-                         dtype=weight.dtype, device=weight.device)
+    output = cp.empty((padded_tokens, n_embd_padded), dtype=weight.dtype)
 
     grid = (padded_tokens // TILE_SEQ, 1, 1)
 
-    ct.launch(torch.cuda.current_stream(), grid, embedding_kernel,
+    ct.launch(cp.cuda.get_current_stream(), grid, embedding_kernel,
               (indices_flat, weight_padded, output, TILE_SEQ, n_embd_padded))
 
     # Slice back to original dimensions
     output = output[:total_tokens, :n_embd]
 
-    return output.reshape(*original_shape, n_embd)
+    return cp.reshape(output, (*original_shape, n_embd))
 
 
 def cutile_token_pos_embedding(
-    token_ids: torch.Tensor,
-    token_weight: torch.Tensor,
-    pos_weight: torch.Tensor,
+    token_ids: cp.ndarray,
+    token_weight: cp.ndarray,
+    pos_weight: cp.ndarray,
     input_pos: int = 0
-) -> torch.Tensor:
+) -> cp.ndarray:
     """
     Compute token + position embeddings.
 
@@ -135,22 +133,21 @@ def cutile_token_pos_embedding(
     tok_emb = cutile_embedding(token_ids, token_weight)
 
     # Position indices
-    pos_indices = torch.arange(input_pos, input_pos + seq_len,
-                               dtype=torch.long, device=token_ids.device)
+    pos_indices = cp.arange(input_pos, input_pos + seq_len, dtype=cp.int64)
 
     # Position embeddings
     pos_emb = cutile_embedding(pos_indices, pos_weight)
 
     # Broadcast add
-    result = tok_emb + pos_emb.unsqueeze(0)
+    result = tok_emb + cp.expand_dims(pos_emb, 0)
 
     return result
 
 
-# Reference PyTorch implementation (same as cutile_embedding now)
-def torch_embedding(indices: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
-    """PyTorch reference embedding"""
-    return torch.nn.functional.embedding(indices, weight)
+# Reference CuPy implementation
+def cupy_embedding(indices: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
+    """CuPy reference embedding"""
+    return weight[indices]
 
 
 if __name__ == "__main__":
@@ -161,8 +158,8 @@ if __name__ == "__main__":
     batch_size = 2
     seq_len = 32
 
-    weight = torch.randn(vocab_size, n_embd, dtype=torch.float32, device='cuda')
-    indices = torch.randint(0, vocab_size, (batch_size, seq_len), device='cuda')
+    weight = cp.random.randn(vocab_size, n_embd, dtype=cp.float32)
+    indices = cp.random.randint(0, vocab_size, (batch_size, seq_len))
 
     emb = cutile_embedding(indices, weight)
     print(f"Embedding shape: {emb.shape}")

@@ -10,7 +10,7 @@ instead of going back to global memory.
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 
 ConstInt = ct.Constant[int]
@@ -110,12 +110,12 @@ def fused_mlp_kernel(
 
 
 def cutile_fused_mlp(
-    x: torch.Tensor,
-    w_fc: torch.Tensor,
-    b_fc: torch.Tensor,
-    w_proj: torch.Tensor,
-    b_proj: torch.Tensor,
-) -> torch.Tensor:
+    x: cp.ndarray,
+    w_fc: cp.ndarray,
+    b_fc: cp.ndarray,
+    w_proj: cp.ndarray,
+    b_proj: cp.ndarray,
+) -> cp.ndarray:
     """
     Fused MLP forward pass.
 
@@ -134,11 +134,13 @@ def cutile_fused_mlp(
     n_hidden = w_fc.shape[0]
 
     # Flatten to 2D
-    x_2d = x.reshape(-1, n_embd).contiguous()
+    x_2d = cp.reshape(x, (-1, n_embd))
+    if not x_2d.flags.c_contiguous:
+        x_2d = cp.ascontiguousarray(x_2d)
     M = x_2d.shape[0]
 
     # Output
-    y = torch.empty(M, n_embd, dtype=x.dtype, device=x.device)
+    y = cp.empty((M, n_embd), dtype=x.dtype)
 
     # Tile sizes (powers of 2)
     TM = 32
@@ -150,21 +152,21 @@ def cutile_fused_mlp(
     grid = (grid_m * grid_n, 1, 1)
 
     ct.launch(
-        torch.cuda.current_stream(),
+        cp.cuda.get_current_stream(),
         grid,
         fused_mlp_kernel,
         (x_2d, w_fc, b_fc, w_proj, b_proj, y, TM, TN, TK)
     )
 
-    return y.reshape(original_shape)
+    return cp.reshape(y, original_shape)
 
 
-# Reference PyTorch implementation
-def torch_mlp(x, w_fc, b_fc, w_proj, b_proj):
-    """PyTorch reference MLP"""
-    h = torch.nn.functional.linear(x, w_fc, b_fc)
-    h = 0.5 * h * (1.0 + torch.tanh(SQRT_2_OVER_PI * (h + GELU_COEF * h**3)))
-    return torch.nn.functional.linear(h, w_proj, b_proj)
+# Reference CuPy implementation
+def cupy_mlp(x, w_fc, b_fc, w_proj, b_proj):
+    """CuPy reference MLP"""
+    h = cp.matmul(x, w_fc.T) + b_fc
+    h = 0.5 * h * (1.0 + cp.tanh(SQRT_2_OVER_PI * (h + GELU_COEF * h**3)))
+    return cp.matmul(h, w_proj.T) + b_proj
 
 
 if __name__ == "__main__":
@@ -173,16 +175,16 @@ if __name__ == "__main__":
     batch, seq, n_embd = 2, 32, 64  # Use power of 2 for n_embd
     n_hidden = 4 * n_embd  # 256
 
-    x = torch.randn(batch, seq, n_embd, dtype=torch.float32, device='cuda')
-    w_fc = torch.randn(n_hidden, n_embd, dtype=torch.float32, device='cuda') * 0.02
-    b_fc = torch.randn(n_hidden, dtype=torch.float32, device='cuda') * 0.02
-    w_proj = torch.randn(n_embd, n_hidden, dtype=torch.float32, device='cuda') * 0.02
-    b_proj = torch.randn(n_embd, dtype=torch.float32, device='cuda') * 0.02
+    x = cp.random.randn(batch, seq, n_embd, dtype=cp.float32)
+    w_fc = cp.random.randn(n_hidden, n_embd, dtype=cp.float32) * 0.02
+    b_fc = cp.random.randn(n_hidden, dtype=cp.float32) * 0.02
+    w_proj = cp.random.randn(n_embd, n_hidden, dtype=cp.float32) * 0.02
+    b_proj = cp.random.randn(n_embd, dtype=cp.float32) * 0.02
 
     y_cutile = cutile_fused_mlp(x, w_fc, b_fc, w_proj, b_proj)
-    y_torch = torch_mlp(x, w_fc, b_fc, w_proj, b_proj)
+    y_cupy = cupy_mlp(x, w_fc, b_fc, w_proj, b_proj)
 
-    diff = (y_cutile - y_torch).abs().max().item()
+    diff = cp.abs(y_cutile - y_cupy).max()
     print(f"Input: {x.shape}")
     print(f"Output: {y_cutile.shape}")
     print(f"Max diff: {diff:.6e}")

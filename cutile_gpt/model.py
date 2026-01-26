@@ -7,8 +7,7 @@ Architecture matches minGPT for weight compatibility.
 """
 
 import math
-import torch
-import torch.nn as nn
+import cupy as cp
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -98,62 +97,61 @@ class CutileGPT:
         n_embd = cfg.n_embd
 
         # Token and position embeddings
-        self.weights['wte'] = torch.randn(
-            cfg.vocab_size, n_embd, device=self.device) * 0.02
-        self.weights['wpe'] = torch.randn(
-            cfg.block_size, n_embd, device=self.device) * 0.02
+        self.weights['wte'] = cp.random.randn(cfg.vocab_size, n_embd, dtype=cp.float32) * 0.02
+        self.weights['wpe'] = cp.random.randn(cfg.block_size, n_embd, dtype=cp.float32) * 0.02
 
         # Transformer blocks
         for i in range(cfg.n_layer):
             prefix = f'h.{i}.'
 
             # LayerNorm 1 (before attention)
-            self.weights[prefix + 'ln_1.weight'] = torch.ones(n_embd, device=self.device)
-            self.weights[prefix + 'ln_1.bias'] = torch.zeros(n_embd, device=self.device)
+            self.weights[prefix + 'ln_1.weight'] = cp.ones(n_embd, dtype=cp.float32)
+            self.weights[prefix + 'ln_1.bias'] = cp.zeros(n_embd, dtype=cp.float32)
 
             # Attention: c_attn (QKV projection) and c_proj (output projection)
-            self.weights[prefix + 'attn.c_attn.weight'] = torch.randn(
-                3 * n_embd, n_embd, device=self.device) * 0.02
-            self.weights[prefix + 'attn.c_attn.bias'] = torch.zeros(
-                3 * n_embd, device=self.device)
-            self.weights[prefix + 'attn.c_proj.weight'] = torch.randn(
-                n_embd, n_embd, device=self.device) * (0.02 / math.sqrt(2 * cfg.n_layer))
-            self.weights[prefix + 'attn.c_proj.bias'] = torch.zeros(
-                n_embd, device=self.device)
+            self.weights[prefix + 'attn.c_attn.weight'] = cp.random.randn(
+                3 * n_embd, n_embd, dtype=cp.float32) * 0.02
+            self.weights[prefix + 'attn.c_attn.bias'] = cp.zeros(3 * n_embd, dtype=cp.float32)
+            self.weights[prefix + 'attn.c_proj.weight'] = cp.random.randn(
+                n_embd, n_embd, dtype=cp.float32) * (0.02 / math.sqrt(2 * cfg.n_layer))
+            self.weights[prefix + 'attn.c_proj.bias'] = cp.zeros(n_embd, dtype=cp.float32)
 
             # LayerNorm 2 (before MLP)
-            self.weights[prefix + 'ln_2.weight'] = torch.ones(n_embd, device=self.device)
-            self.weights[prefix + 'ln_2.bias'] = torch.zeros(n_embd, device=self.device)
+            self.weights[prefix + 'ln_2.weight'] = cp.ones(n_embd, dtype=cp.float32)
+            self.weights[prefix + 'ln_2.bias'] = cp.zeros(n_embd, dtype=cp.float32)
 
             # MLP: c_fc (expand) and c_proj (contract)
-            self.weights[prefix + 'mlp.c_fc.weight'] = torch.randn(
-                4 * n_embd, n_embd, device=self.device) * 0.02
-            self.weights[prefix + 'mlp.c_fc.bias'] = torch.zeros(
-                4 * n_embd, device=self.device)
-            self.weights[prefix + 'mlp.c_proj.weight'] = torch.randn(
-                n_embd, 4 * n_embd, device=self.device) * (0.02 / math.sqrt(2 * cfg.n_layer))
-            self.weights[prefix + 'mlp.c_proj.bias'] = torch.zeros(
-                n_embd, device=self.device)
+            self.weights[prefix + 'mlp.c_fc.weight'] = cp.random.randn(
+                4 * n_embd, n_embd, dtype=cp.float32) * 0.02
+            self.weights[prefix + 'mlp.c_fc.bias'] = cp.zeros(4 * n_embd, dtype=cp.float32)
+            self.weights[prefix + 'mlp.c_proj.weight'] = cp.random.randn(
+                n_embd, 4 * n_embd, dtype=cp.float32) * (0.02 / math.sqrt(2 * cfg.n_layer))
+            self.weights[prefix + 'mlp.c_proj.bias'] = cp.zeros(n_embd, dtype=cp.float32)
 
         # Final LayerNorm
-        self.weights['ln_f.weight'] = torch.ones(n_embd, device=self.device)
-        self.weights['ln_f.bias'] = torch.zeros(n_embd, device=self.device)
+        self.weights['ln_f.weight'] = cp.ones(n_embd, dtype=cp.float32)
+        self.weights['ln_f.bias'] = cp.zeros(n_embd, dtype=cp.float32)
 
         # Language model head (tied with wte in minGPT, but we keep separate for clarity)
         self.weights['lm_head.weight'] = self.weights['wte']  # Weight tying
 
-    def load_from_mingpt(self, mingpt_model: nn.Module):
+    def load_from_mingpt(self, mingpt_model):
         """
-        Load weights from a minGPT model.
+        Load weights from a minGPT model (PyTorch).
 
         Args:
             mingpt_model: A minGPT GPT model instance
         """
+        import torch
         sd = mingpt_model.state_dict()
 
+        # Convert PyTorch tensors to CuPy arrays
+        def torch_to_cupy(t):
+            return cp.asarray(t.detach().cpu().numpy())
+
         # Token and position embeddings
-        self.weights['wte'] = sd['transformer.wte.weight'].to(self.device)
-        self.weights['wpe'] = sd['transformer.wpe.weight'].to(self.device)
+        self.weights['wte'] = torch_to_cupy(sd['transformer.wte.weight'])
+        self.weights['wpe'] = torch_to_cupy(sd['transformer.wpe.weight'])
 
         # Transformer blocks
         for i in range(self.config.n_layer):
@@ -161,37 +159,37 @@ class CutileGPT:
             sd_prefix = f'transformer.h.{i}.'
 
             # LayerNorm 1
-            self.weights[prefix + 'ln_1.weight'] = sd[sd_prefix + 'ln_1.weight'].to(self.device)
-            self.weights[prefix + 'ln_1.bias'] = sd[sd_prefix + 'ln_1.bias'].to(self.device)
+            self.weights[prefix + 'ln_1.weight'] = torch_to_cupy(sd[sd_prefix + 'ln_1.weight'])
+            self.weights[prefix + 'ln_1.bias'] = torch_to_cupy(sd[sd_prefix + 'ln_1.bias'])
 
             # Attention
-            self.weights[prefix + 'attn.c_attn.weight'] = sd[sd_prefix + 'attn.c_attn.weight'].to(self.device)
-            self.weights[prefix + 'attn.c_attn.bias'] = sd[sd_prefix + 'attn.c_attn.bias'].to(self.device)
-            self.weights[prefix + 'attn.c_proj.weight'] = sd[sd_prefix + 'attn.c_proj.weight'].to(self.device)
-            self.weights[prefix + 'attn.c_proj.bias'] = sd[sd_prefix + 'attn.c_proj.bias'].to(self.device)
+            self.weights[prefix + 'attn.c_attn.weight'] = torch_to_cupy(sd[sd_prefix + 'attn.c_attn.weight'])
+            self.weights[prefix + 'attn.c_attn.bias'] = torch_to_cupy(sd[sd_prefix + 'attn.c_attn.bias'])
+            self.weights[prefix + 'attn.c_proj.weight'] = torch_to_cupy(sd[sd_prefix + 'attn.c_proj.weight'])
+            self.weights[prefix + 'attn.c_proj.bias'] = torch_to_cupy(sd[sd_prefix + 'attn.c_proj.bias'])
 
             # LayerNorm 2
-            self.weights[prefix + 'ln_2.weight'] = sd[sd_prefix + 'ln_2.weight'].to(self.device)
-            self.weights[prefix + 'ln_2.bias'] = sd[sd_prefix + 'ln_2.bias'].to(self.device)
+            self.weights[prefix + 'ln_2.weight'] = torch_to_cupy(sd[sd_prefix + 'ln_2.weight'])
+            self.weights[prefix + 'ln_2.bias'] = torch_to_cupy(sd[sd_prefix + 'ln_2.bias'])
 
             # MLP
-            self.weights[prefix + 'mlp.c_fc.weight'] = sd[sd_prefix + 'mlp.c_fc.weight'].to(self.device)
-            self.weights[prefix + 'mlp.c_fc.bias'] = sd[sd_prefix + 'mlp.c_fc.bias'].to(self.device)
-            self.weights[prefix + 'mlp.c_proj.weight'] = sd[sd_prefix + 'mlp.c_proj.weight'].to(self.device)
-            self.weights[prefix + 'mlp.c_proj.bias'] = sd[sd_prefix + 'mlp.c_proj.bias'].to(self.device)
+            self.weights[prefix + 'mlp.c_fc.weight'] = torch_to_cupy(sd[sd_prefix + 'mlp.c_fc.weight'])
+            self.weights[prefix + 'mlp.c_fc.bias'] = torch_to_cupy(sd[sd_prefix + 'mlp.c_fc.bias'])
+            self.weights[prefix + 'mlp.c_proj.weight'] = torch_to_cupy(sd[sd_prefix + 'mlp.c_proj.weight'])
+            self.weights[prefix + 'mlp.c_proj.bias'] = torch_to_cupy(sd[sd_prefix + 'mlp.c_proj.bias'])
 
         # Final LayerNorm
-        self.weights['ln_f.weight'] = sd['transformer.ln_f.weight'].to(self.device)
-        self.weights['ln_f.bias'] = sd['transformer.ln_f.bias'].to(self.device)
+        self.weights['ln_f.weight'] = torch_to_cupy(sd['transformer.ln_f.weight'])
+        self.weights['ln_f.bias'] = torch_to_cupy(sd['transformer.ln_f.bias'])
 
         # LM head (weight tied with wte)
-        self.weights['lm_head.weight'] = sd['lm_head.weight'].to(self.device)
+        self.weights['lm_head.weight'] = torch_to_cupy(sd['lm_head.weight'])
 
-    def __call__(self, idx: torch.Tensor) -> Tuple[torch.Tensor, None]:
+    def __call__(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
         """Make model callable."""
         return self.forward(idx)
 
-    def forward(self, idx: torch.Tensor) -> Tuple[torch.Tensor, None]:
+    def forward(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
         """
         Forward pass using cutile kernels.
 
@@ -209,11 +207,11 @@ class CutileGPT:
         tok_emb = cutile_embedding(idx, self.weights['wte'])
 
         # Position embeddings
-        pos = torch.arange(0, seq_len, dtype=torch.long, device=self.device)
+        pos = cp.arange(0, seq_len, dtype=cp.int64)
         pos_emb = cutile_embedding(pos, self.weights['wpe'])
 
         # Combine embeddings
-        x = tok_emb + pos_emb.unsqueeze(0)
+        x = tok_emb + cp.expand_dims(pos_emb, 0)
 
         # Transformer blocks
         for i in range(cfg.n_layer):
@@ -278,14 +276,13 @@ class CutileGPT:
 
         return logits, None
 
-    @torch.no_grad()
     def generate(
         self,
-        idx: torch.Tensor,
+        idx: cp.ndarray,
         max_new_tokens: int,
         temperature: float = 1.0,
         top_k: Optional[int] = None
-    ) -> torch.Tensor:
+    ) -> cp.ndarray:
         """
         Autoregressive generation.
 
@@ -300,7 +297,7 @@ class CutileGPT:
         """
         for _ in range(max_new_tokens):
             # Crop to block_size if needed
-            idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
+            idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size:]
 
             # Forward pass
             logits, _ = self.forward(idx_cond)
@@ -310,15 +307,30 @@ class CutileGPT:
 
             # Optional top-k filtering
             if top_k is not None:
-                v, _ = torch.topk(logits, min(top_k, logits.size(-1)))
-                logits[logits < v[:, [-1]]] = float('-inf')
+                # Get top k values and indices
+                k = min(top_k, logits.shape[-1])
+                # Use partition to get kth smallest element
+                top_vals = cp.partition(logits, -k, axis=-1)[:, -k:]
+                kth_val = cp.min(top_vals, axis=-1, keepdims=True)
+                logits = cp.where(logits < kth_val, float('-inf'), logits)
 
-            # Sample
-            probs = torch.softmax(logits, dim=-1)
-            idx_next = torch.multinomial(probs, num_samples=1)
+            # Softmax
+            logits_max = cp.max(logits, axis=-1, keepdims=True)
+            exp_logits = cp.exp(logits - logits_max)
+            probs = exp_logits / cp.sum(exp_logits, axis=-1, keepdims=True)
+
+            # Sample using CuPy's multinomial-like sampling
+            # CuPy doesn't have multinomial, so we use cumsum + searchsorted
+            batch_size = probs.shape[0]
+            idx_next = cp.zeros((batch_size, 1), dtype=cp.int64)
+
+            for b in range(batch_size):
+                cumsum_probs = cp.cumsum(probs[b])
+                rand_val = cp.random.rand().astype(cp.float32)
+                idx_next[b, 0] = cp.searchsorted(cumsum_probs, rand_val)
 
             # Append
-            idx = torch.cat([idx, idx_next], dim=1)
+            idx = cp.concatenate([idx, idx_next], axis=1)
 
         return idx
 
@@ -340,7 +352,7 @@ if __name__ == "__main__":
     # Test forward pass
     batch_size = 2
     seq_len = 32
-    idx = torch.randint(0, config.vocab_size, (batch_size, seq_len), device='cuda')
+    idx = cp.random.randint(0, config.vocab_size, (batch_size, seq_len))
 
     print(f"\nInput shape: {idx.shape}")
 
@@ -355,6 +367,6 @@ if __name__ == "__main__":
     print("\n--- Testing Generation ---")
     generated = model.generate(idx[:1, :5], max_new_tokens=10)
     print(f"Generated sequence shape: {generated.shape}")
-    print(f"Generated tokens: {generated[0].tolist()}")
+    print(f"Generated tokens: {cp.asnumpy(generated[0]).tolist()}")
 
     print("\n--- All CutileGPT tests passed! ---")

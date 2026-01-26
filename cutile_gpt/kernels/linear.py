@@ -11,7 +11,7 @@ Optimized MatMul with:
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 
 ConstInt = ct.Constant[int]
@@ -109,7 +109,7 @@ def matmul_bias_kernel(A, B, bias, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     ct.store(C, index=(bid_m, bid_n), tile=acc.astype(C.dtype))
 
 
-def cutile_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
+def cutile_linear(x: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
     """
     Linear transformation without bias: y = x @ weight.T
 
@@ -120,26 +120,30 @@ def cutile_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     Returns:
         Output tensor (..., out_features)
     """
-    if not x.is_cuda or not weight.is_cuda:
-        raise ValueError("Tensors must be on CUDA device")
+    if not isinstance(x, cp.ndarray) or not isinstance(weight, cp.ndarray):
+        raise ValueError("Tensors must be CuPy arrays on CUDA device")
 
     original_shape = x.shape[:-1]
     in_features = x.shape[-1]
     out_features = weight.shape[0]
 
     # Reshape x to 2D: (batch * seq, in_features)
-    x_2d = x.reshape(-1, in_features).contiguous()
+    x_2d = cp.reshape(x, (-1, in_features))
+    if not x_2d.flags.c_contiguous:
+        x_2d = cp.ascontiguousarray(x_2d)
     M = x_2d.shape[0]
     N = out_features
 
     # Transpose weight for x @ W^T
-    weight_t = weight.t().contiguous()  # (in_features, out_features)
+    weight_t = cp.transpose(weight)  # (in_features, out_features)
+    if not weight_t.flags.c_contiguous:
+        weight_t = cp.ascontiguousarray(weight_t)
 
     # Output
-    output = torch.empty(M, N, dtype=x.dtype, device=x.device)
+    output = cp.empty((M, N), dtype=x.dtype)
 
     # Tile sizes - larger for fp16/bf16 (tensor cores), smaller for fp32
-    if x.dtype in (torch.float16, torch.bfloat16):
+    if x.dtype in (cp.float16, cp.dtype('float16')):
         tm, tn, tk = 128, 128, 64  # Larger tiles for tensor cores
     else:
         tm, tn, tk = 32, 32, 32  # Use TF32 tensor cores
@@ -148,17 +152,17 @@ def cutile_linear(x: torch.Tensor, weight: torch.Tensor) -> torch.Tensor:
     grid_n = math.ceil(N / tn)
     grid = (grid_m * grid_n, 1, 1)
 
-    ct.launch(torch.cuda.current_stream(), grid, matmul_kernel,
+    ct.launch(cp.cuda.get_current_stream(), grid, matmul_kernel,
               (x_2d, weight_t, output, tm, tn, tk))
 
-    return output.reshape(*original_shape, out_features)
+    return cp.reshape(output, (*original_shape, out_features))
 
 
 def cutile_linear_bias(
-    x: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor
-) -> torch.Tensor:
+    x: cp.ndarray,
+    weight: cp.ndarray,
+    bias: cp.ndarray
+) -> cp.ndarray:
     """
     Fused linear transformation with bias: y = x @ weight.T + bias
 
@@ -172,26 +176,30 @@ def cutile_linear_bias(
     Returns:
         Output tensor (..., out_features)
     """
-    if not x.is_cuda or not weight.is_cuda:
-        raise ValueError("Tensors must be on CUDA device")
+    if not isinstance(x, cp.ndarray) or not isinstance(weight, cp.ndarray):
+        raise ValueError("Tensors must be CuPy arrays on CUDA device")
 
     original_shape = x.shape[:-1]
     in_features = x.shape[-1]
     out_features = weight.shape[0]
 
     # Reshape x to 2D
-    x_2d = x.reshape(-1, in_features).contiguous()
+    x_2d = cp.reshape(x, (-1, in_features))
+    if not x_2d.flags.c_contiguous:
+        x_2d = cp.ascontiguousarray(x_2d)
     M = x_2d.shape[0]
     N = out_features
 
     # Transpose weight
-    weight_t = weight.t().contiguous()
+    weight_t = cp.transpose(weight)
+    if not weight_t.flags.c_contiguous:
+        weight_t = cp.ascontiguousarray(weight_t)
 
     # Output
-    output = torch.empty(M, N, dtype=x.dtype, device=x.device)
+    output = cp.empty((M, N), dtype=x.dtype)
 
     # Tile sizes
-    if x.dtype in (torch.float16, torch.bfloat16):
+    if x.dtype in (cp.float16, cp.dtype('float16')):
         tm, tn, tk = 128, 128, 64
     else:
         tm, tn, tk = 32, 32, 32
@@ -201,17 +209,20 @@ def cutile_linear_bias(
     grid = (grid_m * grid_n, 1, 1)
 
     # Use fused matmul+bias kernel
-    ct.launch(torch.cuda.current_stream(), grid, matmul_bias_kernel,
+    ct.launch(cp.cuda.get_current_stream(), grid, matmul_bias_kernel,
               (x_2d, weight_t, bias, output, tm, tn, tk))
 
-    return output.reshape(*original_shape, out_features)
+    return cp.reshape(output, (*original_shape, out_features))
 
 
-# Reference PyTorch implementation
-def torch_linear(x: torch.Tensor, weight: torch.Tensor,
-                 bias: torch.Tensor = None) -> torch.Tensor:
-    """PyTorch reference linear"""
-    return torch.nn.functional.linear(x, weight, bias)
+# Reference implementation using CuPy
+def cupy_linear(x: cp.ndarray, weight: cp.ndarray,
+                bias: cp.ndarray = None) -> cp.ndarray:
+    """CuPy reference linear: y = x @ weight.T + bias"""
+    y = cp.matmul(x, weight.T)
+    if bias is not None:
+        y = y + bias
+    return y
 
 
 if __name__ == "__main__":
@@ -219,27 +230,27 @@ if __name__ == "__main__":
 
     batch, seq, in_feat, out_feat = 2, 64, 48, 192
 
-    x = torch.randn(batch, seq, in_feat, dtype=torch.float32, device='cuda')
-    weight = torch.randn(out_feat, in_feat, dtype=torch.float32, device='cuda')
-    bias = torch.randn(out_feat, dtype=torch.float32, device='cuda')
+    x = cp.random.randn(batch, seq, in_feat, dtype=cp.float32)
+    weight = cp.random.randn(out_feat, in_feat, dtype=cp.float32)
+    bias = cp.random.randn(out_feat, dtype=cp.float32)
 
     # Test without bias
     y_cutile = cutile_linear(x, weight)
-    y_torch = torch_linear(x, weight)
+    y_cupy = cupy_linear(x, weight)
 
     print(f"Input shape: {x.shape}")
     print(f"Weight shape: {weight.shape}")
     print(f"Output shape: {y_cutile.shape}")
-    print(f"Without bias - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-4, rtol=1e-4)
+    print(f"Without bias - Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-4, rtol=1e-4)
     print("Linear (no bias) test passed!")
 
     # Test with bias
     y_cutile_bias = cutile_linear_bias(x, weight, bias)
-    y_torch_bias = torch_linear(x, weight, bias)
+    y_cupy_bias = cupy_linear(x, weight, bias)
 
-    print(f"With bias - Max diff: {(y_cutile_bias - y_torch_bias).abs().max().item():.6f}")
-    torch.testing.assert_close(y_cutile_bias, y_torch_bias, atol=1e-4, rtol=1e-4)
+    print(f"With bias - Max diff: {cp.abs(y_cutile_bias - y_cupy_bias).max():.6f}")
+    cp.testing.assert_allclose(y_cutile_bias, y_cupy_bias, atol=1e-4, rtol=1e-4)
     print("Linear (with bias) test passed!")
 
     print("\n--- All Linear tests passed! ---")

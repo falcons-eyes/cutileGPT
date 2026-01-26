@@ -1,0 +1,54 @@
+<svg width="720" height="350" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="360" y="30" font-family="Arial, sans-serif" font-size="22" font-weight="bold" text-anchor="middle" fill="#333">
+    Package Size Comparison
+  </text>
+
+  <text x="360" y="55" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#666">
+    Installation footprint (smaller is better)
+  </text>
+
+  <!-- PyTorch Stack -->
+  <rect x="60" y="100" width="550" height="60" fill="#ee4c2c" rx="8"/>
+  <text x="80" y="135" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff">
+    PyTorch + Dependencies
+  </text>
+  <text x="580" y="135" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="end" fill="#fff">
+    988 MB
+  </text>
+
+  <!-- CuPy Stack -->
+  <rect x="60" y="180" width="95" height="60" fill="#76b900" rx="8"/>
+  <text x="80" y="215" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#fff">
+    CuPy
+  </text>
+  <text x="135" y="215" font-family="Arial, sans-serif" font-size="18" font-weight="bold" text-anchor="end" fill="#fff">
+    165 MB
+  </text>
+
+  <!-- Reduction Badge -->
+  <g transform="translate(60, 260)">
+    <path d="M 0 0 L 200 0 L 200 50 L 100 70 L 0 50 Z" fill="#76b900"/>
+    <text x="100" y="28" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#fff">
+      83% Reduction 🎉
+    </text>
+    <text x="100" y="48" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#fff">
+      6x smaller package
+    </text>
+  </g>
+
+  <!-- Info boxes -->
+  <g transform="translate(330, 260)">
+    <rect width="330" height="70" fill="#e8f5e9" stroke="#76b900" stroke-width="2" rx="6"/>
+
+    <text x="16" y="25" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#333">
+      ✓ Faster Docker builds
+    </text>
+    <text x="16" y="45" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#333">
+      ✓ Lower cloud storage costs
+    </text>
+    <text x="16" y="65" font-family="Arial, sans-serif" font-size="13" font-weight="600" fill="#333">
+      ✓ Edge device deployment ready
+    </text>
+  </g>
+</svg>

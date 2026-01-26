@@ -10,7 +10,7 @@ Optimized with:
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 from cuda.tile import RoundingMode as RMd
 import numpy as np
@@ -117,11 +117,11 @@ def causal_attention_kernel(
 
 
 def cutile_causal_attention(
-    q: torch.Tensor,
-    k: torch.Tensor,
-    v: torch.Tensor,
+    q: cp.ndarray,
+    k: cp.ndarray,
+    v: cp.ndarray,
     n_head: int
-) -> torch.Tensor:
+) -> cp.ndarray:
     """
     Compute causal multi-head self-attention.
 
@@ -137,33 +137,36 @@ def cutile_causal_attention(
     Returns:
         Attention output (batch, n_head, seq_len, head_dim)
     """
-    if not q.is_cuda:
-        raise ValueError("Tensors must be on CUDA device")
+    if not isinstance(q, cp.ndarray):
+        raise ValueError("Tensors must be CuPy arrays on CUDA device")
 
     batch, n_head, seq_len, head_dim = q.shape
 
     # Ensure contiguous memory layout for better performance
-    q = q.contiguous()
-    k = k.contiguous()
-    v = v.contiguous()
+    if not q.flags.c_contiguous:
+        q = cp.ascontiguousarray(q)
+    if not k.flags.c_contiguous:
+        k = cp.ascontiguousarray(k)
+    if not v.flags.c_contiguous:
+        v = cp.ascontiguousarray(v)
 
     # Scale factor
     qk_scale = 1.0 / math.sqrt(head_dim)
 
     # Output tensor
-    out = torch.empty_like(q)
+    out = cp.empty_like(q)
 
-    # Larger tile sizes for better occupancy (like official sample)
-    # Use 128 for longer sequences, 64 for shorter
-    tile_m = min(128, seq_len) if seq_len >= 128 else min(64, seq_len)
-    tile_n = min(128, seq_len) if seq_len >= 128 else min(64, seq_len)
+    # Tile sizes must be power of 2 for cutile
+    # Use fixed 64x64 tiles (power of 2) with padding
+    tile_m = 64
+    tile_n = 64
 
     # Grid dimensions
     grid_x = math.ceil(seq_len / tile_m)
     grid_y = batch * n_head
 
     ct.launch(
-        torch.cuda.current_stream(),
+        cp.cuda.get_current_stream(),
         (grid_x, grid_y, 1),
         causal_attention_kernel,
         (q, k, v, out, qk_scale, head_dim, n_head, tile_m, tile_n)
@@ -173,13 +176,13 @@ def cutile_causal_attention(
 
 
 def cutile_mha_forward(
-    x: torch.Tensor,
-    c_attn_weight: torch.Tensor,
-    c_attn_bias: torch.Tensor,
-    c_proj_weight: torch.Tensor,
-    c_proj_bias: torch.Tensor,
+    x: cp.ndarray,
+    c_attn_weight: cp.ndarray,
+    c_attn_bias: cp.ndarray,
+    c_proj_weight: cp.ndarray,
+    c_proj_bias: cp.ndarray,
     n_head: int
-) -> torch.Tensor:
+) -> cp.ndarray:
     """
     Full multi-head attention forward pass (matching minGPT).
 
@@ -203,18 +206,21 @@ def cutile_mha_forward(
     qkv = cutile_linear_bias(x, c_attn_weight, c_attn_bias)  # (B, T, 3*n_embd)
 
     # Split into Q, K, V
-    q, k, v = qkv.split(n_embd, dim=2)
+    q, k, v = cp.split(qkv, 3, axis=2)
 
     # Reshape to (batch, n_head, seq_len, head_dim)
-    q = q.view(batch, seq_len, n_head, head_dim).transpose(1, 2)
-    k = k.view(batch, seq_len, n_head, head_dim).transpose(1, 2)
-    v = v.view(batch, seq_len, n_head, head_dim).transpose(1, 2)
+    q = cp.transpose(cp.reshape(q, (batch, seq_len, n_head, head_dim)), (0, 2, 1, 3))
+    k = cp.transpose(cp.reshape(k, (batch, seq_len, n_head, head_dim)), (0, 2, 1, 3))
+    v = cp.transpose(cp.reshape(v, (batch, seq_len, n_head, head_dim)), (0, 2, 1, 3))
 
     # Attention
     y = cutile_causal_attention(q, k, v, n_head)
 
     # Reshape back: (batch, n_head, seq_len, head_dim) -> (batch, seq_len, n_embd)
-    y = y.transpose(1, 2).contiguous().view(batch, seq_len, n_embd)
+    y = cp.transpose(y, (0, 2, 1, 3))
+    if not y.flags.c_contiguous:
+        y = cp.ascontiguousarray(y)
+    y = cp.reshape(y, (batch, seq_len, n_embd))
 
     # Output projection
     y = cutile_linear_bias(y, c_proj_weight, c_proj_bias)
@@ -222,24 +228,25 @@ def cutile_mha_forward(
     return y
 
 
-# Reference PyTorch implementation
-def torch_causal_attention(q, k, v, n_head):
-    """PyTorch reference causal attention"""
+# Reference CuPy implementation
+def cupy_causal_attention(q, k, v, n_head):
+    """CuPy reference causal attention"""
     batch, n_head, seq_len, head_dim = q.shape
     scale = 1.0 / math.sqrt(head_dim)
 
     # QK^T
-    att = (q @ k.transpose(-2, -1)) * scale
+    att = cp.matmul(q, cp.transpose(k, (0, 1, 3, 2))) * scale
 
     # Causal mask
-    mask = torch.tril(torch.ones(seq_len, seq_len, device=q.device))
-    att = att.masked_fill(mask == 0, float('-inf'))
+    mask = cp.tril(cp.ones((seq_len, seq_len)))
+    att = cp.where(mask == 0, float('-inf'), att)
 
     # Softmax
-    att = torch.softmax(att, dim=-1)
+    att = cp.exp(att - cp.max(att, axis=-1, keepdims=True))
+    att = att / cp.sum(att, axis=-1, keepdims=True)
 
     # Weighted sum
-    y = att @ v
+    y = cp.matmul(att, v)
     return y
 
 
@@ -249,18 +256,18 @@ if __name__ == "__main__":
     batch, n_head, seq_len, head_dim = 2, 3, 32, 16
     n_embd = n_head * head_dim
 
-    q = torch.randn(batch, n_head, seq_len, head_dim, dtype=torch.float32, device='cuda')
-    k = torch.randn(batch, n_head, seq_len, head_dim, dtype=torch.float32, device='cuda')
-    v = torch.randn(batch, n_head, seq_len, head_dim, dtype=torch.float32, device='cuda')
+    q = cp.random.randn(batch, n_head, seq_len, head_dim, dtype=cp.float32)
+    k = cp.random.randn(batch, n_head, seq_len, head_dim, dtype=cp.float32)
+    v = cp.random.randn(batch, n_head, seq_len, head_dim, dtype=cp.float32)
 
     y_cutile = cutile_causal_attention(q, k, v, n_head)
-    y_torch = torch_causal_attention(q, k, v, n_head)
+    y_cupy = cupy_causal_attention(q, k, v, n_head)
 
     print(f"Input Q shape: {q.shape}")
     print(f"Output shape: {y_cutile.shape}")
-    print(f"Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
+    print(f"Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
 
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-3, rtol=1e-3)
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-3, rtol=1e-3)
     print("Causal attention test passed!")
 
     print("\n--- All Attention tests passed! ---")

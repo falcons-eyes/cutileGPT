@@ -1,0 +1,200 @@
+<svg width="900" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="450" y="35" font-family="Arial, sans-serif" font-size="26" font-weight="bold" text-anchor="middle" fill="#333">
+    Why cutile + CuPy over PyTorch?
+  </text>
+
+  <!-- Grid of advantages (Unified to 3 tones: Green, Teal, Amber) -->
+
+  <!-- Row 1 -->
+  <!-- 1. Smaller Footprint (Green) -->
+  <g transform="translate(30, 60)">
+    <rect width="270" height="150" fill="#e8f5e9" stroke="#76b900" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">📦</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#5a8f00">
+      6x Smaller Footprint
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      165 MB vs 988 MB
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Faster deployments
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Lower storage costs
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Edge-device ready
+    </text>
+  </g>
+
+  <!-- 2. Full Control (Teal) -->
+  <g transform="translate(320, 60)">
+    <rect width="270" height="150" fill="#e0f7fa" stroke="#00bcd4" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">🎛️</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#00838f">
+      Full Control
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Every kernel is explicit
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Easy debugging
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Precise profiling
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Custom optimizations
+    </text>
+  </g>
+
+  <!-- 3. Lower Memory (Amber) -->
+  <g transform="translate(610, 60)">
+    <rect width="270" height="150" fill="#fff3e0" stroke="#ff9800" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">💾</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#e65100">
+      Lower Memory Usage
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      5-10% reduction
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ No autograd overhead
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Minimal dispatch cost
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Pure array operations
+    </text>
+  </g>
+
+  <!-- Row 2 -->
+  <!-- 4. Learning Value (Green) -->
+  <g transform="translate(30, 230)">
+    <rect width="270" height="150" fill="#e8f5e9" stroke="#76b900" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">🎓</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#5a8f00">
+      Educational Value
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Learn GPU programming
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Tile-based concepts
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Memory hierarchies
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Hardware accelerators
+    </text>
+  </g>
+
+  <!-- 5. NumPy Compatible (Teal) -->
+  <g transform="translate(320, 230)">
+    <rect width="270" height="150" fill="#e0f7fa" stroke="#00bcd4" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">🔗</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#00838f">
+      NumPy Compatible
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Same API as NumPy
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ SciPy integration
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Easy CPU ↔ GPU
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Familiar interface
+    </text>
+  </g>
+
+  <!-- 6. Latest GPU Features (Amber) -->
+  <g transform="translate(610, 230)">
+    <rect width="270" height="150" fill="#fff3e0" stroke="#ff9800" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">⚡</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#e65100">
+      Latest GPU Features
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Direct hardware access
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ TMA (Hopper/Blackwell)
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Arch-specific tuning
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Immediate adoption
+    </text>
+  </g>
+
+  <!-- Row 3 -->
+  <!-- 7. Production Ready (Green) -->
+  <g transform="translate(30, 400)">
+    <rect width="270" height="150" fill="#e8f5e9" stroke="#76b900" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">🚀</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#5a8f00">
+      Production Ready
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Lightweight inference
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Docker optimized
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Lambda-ready
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Serverless friendly
+    </text>
+  </g>
+
+  <!-- 8. Predictable Performance (Teal) -->
+  <g transform="translate(320, 400)">
+    <rect width="270" height="150" fill="#e0f7fa" stroke="#00bcd4" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">📊</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#00838f">
+      Predictable Perf
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Explicit kernel calls
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Known grid sizes
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Clear memory usage
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ No hidden dispatch
+    </text>
+  </g>
+
+  <!-- 9. Faster Execution (Amber) -->
+  <g transform="translate(610, 400)">
+    <rect width="270" height="150" fill="#fff3e0" stroke="#ff9800" stroke-width="2" rx="8"/>
+    <text x="135" y="35" font-family="Arial, sans-serif" font-size="32" text-anchor="middle">🏃</text>
+    <text x="135" y="65" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#e65100">
+      1.17-1.31x Faster
+    </text>
+    <text x="135" y="88" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#555">
+      Optimized kernels
+    </text>
+    <text x="135" y="108" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ 2D swizzle
+    </text>
+    <text x="135" y="125" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Kernel fusion
+    </text>
+    <text x="135" y="142" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+      ✓ Minimal overhead
+    </text>
+  </g>
+</svg>

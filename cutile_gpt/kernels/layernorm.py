@@ -7,7 +7,7 @@ We pad dimensions and slice back.
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 
 ConstInt = ct.Constant[int]
@@ -75,11 +75,11 @@ def layer_norm_kernel(X, W, B, Y, eps, N: ConstInt, TILE_N: ConstInt):
 
 
 def cutile_layer_norm(
-    x: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
+    x: cp.ndarray,
+    weight: cp.ndarray,
+    bias: cp.ndarray,
     eps: float = 1e-5
-) -> torch.Tensor:
+) -> cp.ndarray:
     """
     Apply Layer Normalization using cutile kernel.
 
@@ -94,8 +94,8 @@ def cutile_layer_norm(
     Returns:
         Normalized tensor with same shape as input
     """
-    if not x.is_cuda:
-        raise ValueError("Input tensor must be on CUDA device")
+    if not isinstance(x, cp.ndarray):
+        raise ValueError("Input tensor must be a CuPy array on CUDA device")
 
     original_shape = x.shape
     n_embd = x.shape[-1]
@@ -110,40 +110,43 @@ def cutile_layer_norm(
     needs_padding = n_embd_padded != n_embd
 
     # Flatten to 2D
-    x_2d = x.reshape(-1, n_embd)
+    x_2d = cp.reshape(x, (-1, n_embd))
     M = x_2d.shape[0]
 
     if needs_padding:
-        x_padded = torch.zeros(M, n_embd_padded, dtype=x.dtype, device=x.device)
+        x_padded = cp.zeros((M, n_embd_padded), dtype=x.dtype)
         x_padded[:, :n_embd] = x_2d
-        weight_padded = torch.zeros(n_embd_padded, dtype=weight.dtype, device=weight.device)
+        weight_padded = cp.zeros(n_embd_padded, dtype=weight.dtype)
         weight_padded[:n_embd] = weight
-        bias_padded = torch.zeros(n_embd_padded, dtype=bias.dtype, device=bias.device)
+        bias_padded = cp.zeros(n_embd_padded, dtype=bias.dtype)
         bias_padded[:n_embd] = bias
     else:
         x_padded = x_2d
         weight_padded = weight
         bias_padded = bias
 
-    y_padded = torch.empty_like(x_padded)
+    y_padded = cp.empty_like(x_padded)
 
-    ct.launch(torch.cuda.current_stream(), (M,), layer_norm_kernel,
+    ct.launch(cp.cuda.get_current_stream(), (M,), layer_norm_kernel,
               (x_padded, weight_padded, bias_padded, y_padded, eps, n_embd, TILE_N))
 
     # Slice back
     y = y_padded[:, :n_embd]
-    return y.reshape(original_shape)
+    return cp.reshape(y, original_shape)
 
 
-# Reference PyTorch implementation
-def torch_layer_norm(
-    x: torch.Tensor,
-    weight: torch.Tensor,
-    bias: torch.Tensor,
+# Reference CuPy implementation
+def cupy_layer_norm(
+    x: cp.ndarray,
+    weight: cp.ndarray,
+    bias: cp.ndarray,
     eps: float = 1e-5
-) -> torch.Tensor:
-    """PyTorch reference LayerNorm"""
-    return torch.nn.functional.layer_norm(x, weight.shape, weight, bias, eps)
+) -> cp.ndarray:
+    """CuPy reference LayerNorm"""
+    mean = cp.mean(x, axis=-1, keepdims=True)
+    var = cp.var(x, axis=-1, keepdims=True)
+    x_norm = (x - mean) / cp.sqrt(var + eps)
+    return weight * x_norm + bias
 
 
 if __name__ == "__main__":
@@ -151,19 +154,19 @@ if __name__ == "__main__":
 
     batch, seq, n_embd = 2, 64, 48
 
-    x = torch.randn(batch, seq, n_embd, dtype=torch.float32, device='cuda')
-    weight = torch.randn(n_embd, dtype=torch.float32, device='cuda')
-    bias = torch.randn(n_embd, dtype=torch.float32, device='cuda')
+    x = cp.random.randn(batch, seq, n_embd, dtype=cp.float32)
+    weight = cp.random.randn(n_embd, dtype=cp.float32)
+    bias = cp.random.randn(n_embd, dtype=cp.float32)
     eps = 1e-5
 
     y_cutile = cutile_layer_norm(x, weight, bias, eps)
-    y_torch = torch_layer_norm(x, weight, bias, eps)
+    y_cupy = cupy_layer_norm(x, weight, bias, eps)
 
     print(f"Input shape: {x.shape}")
     print(f"Output shape: {y_cutile.shape}")
-    print(f"Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
+    print(f"Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
 
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-4, rtol=1e-4)
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-4, rtol=1e-4)
     print("LayerNorm test passed!")
 
     print("\n--- All LayerNorm tests passed! ---")

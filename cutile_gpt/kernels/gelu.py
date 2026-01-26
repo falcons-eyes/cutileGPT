@@ -7,7 +7,7 @@ Implements the approximate GELU used in GPT-2:
 """
 
 import math
-import torch
+import cupy as cp
 import cuda.tile as ct
 
 ConstInt = ct.Constant[int]
@@ -68,7 +68,7 @@ def gelu_kernel_2d(X, Y, TILE_M: ConstInt, TILE_N: ConstInt):
     ct.store(Y, index=(bid_m, bid_n), tile=y.astype(Y.dtype))
 
 
-def cutile_gelu(x: torch.Tensor) -> torch.Tensor:
+def cutile_gelu(x: cp.ndarray) -> cp.ndarray:
     """
     Apply GELU activation using cutile kernel.
 
@@ -78,72 +78,72 @@ def cutile_gelu(x: torch.Tensor) -> torch.Tensor:
     Returns:
         Output tensor with GELU applied element-wise
     """
-    if not x.is_cuda:
-        raise ValueError("Input tensor must be on CUDA device")
+    if not isinstance(x, cp.ndarray):
+        raise ValueError("Input tensor must be a CuPy array on CUDA device")
 
     # For 2D tensors, use 2D kernel
     if x.ndim == 2:
         M, N = x.shape
-        y = torch.empty_like(x)
+        y = cp.empty_like(x)
 
         TILE_M, TILE_N = 32, 128
         grid_m = math.ceil(M / TILE_M)
         grid_n = math.ceil(N / TILE_N)
         grid = (grid_m, grid_n, 1)
 
-        ct.launch(torch.cuda.current_stream(), grid, gelu_kernel_2d,
+        ct.launch(cp.cuda.get_current_stream(), grid, gelu_kernel_2d,
                   (x, y, TILE_M, TILE_N))
         return y
 
     # For other shapes, flatten and use 1D kernel
     original_shape = x.shape
-    x_flat = x.reshape(-1)
-    y_flat = torch.empty_like(x_flat)
+    x_flat = cp.reshape(x, -1)
+    y_flat = cp.empty_like(x_flat)
 
     TILE_SIZE = 1024
-    num_elements = x_flat.numel()
+    num_elements = x_flat.size
     grid = (math.ceil(num_elements / TILE_SIZE), 1, 1)
 
-    ct.launch(torch.cuda.current_stream(), grid, gelu_kernel,
+    ct.launch(cp.cuda.get_current_stream(), grid, gelu_kernel,
               (x_flat, y_flat, TILE_SIZE))
 
-    return y_flat.reshape(original_shape)
+    return cp.reshape(y_flat, original_shape)
 
 
-# Reference PyTorch implementation for testing
-def torch_gelu(x: torch.Tensor) -> torch.Tensor:
-    """PyTorch reference GELU (approximate version matching GPT-2)"""
-    return 0.5 * x * (1.0 + torch.tanh(SQRT_2_OVER_PI * (x + GELU_COEF * torch.pow(x, 3.0))))
+# Reference CuPy implementation for testing
+def cupy_gelu(x: cp.ndarray) -> cp.ndarray:
+    """CuPy reference GELU (approximate version matching GPT-2)"""
+    return 0.5 * x * (1.0 + cp.tanh(SQRT_2_OVER_PI * (x + GELU_COEF * cp.power(x, 3.0))))
 
 
 if __name__ == "__main__":
     print("--- Testing cutile GELU kernel ---")
 
     # Test 1D
-    x = torch.randn(1024, dtype=torch.float32, device='cuda')
+    x = cp.random.randn(1024, dtype=cp.float32)
     y_cutile = cutile_gelu(x)
-    y_torch = torch_gelu(x)
+    y_cupy = cupy_gelu(x)
 
-    print(f"1D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print(f"1D Test - Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-5, rtol=1e-5)
     print("1D Test passed!")
 
     # Test 2D
-    x = torch.randn(128, 256, dtype=torch.float32, device='cuda')
+    x = cp.random.randn(128, 256, dtype=cp.float32)
     y_cutile = cutile_gelu(x)
-    y_torch = torch_gelu(x)
+    y_cupy = cupy_gelu(x)
 
-    print(f"2D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print(f"2D Test - Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-5, rtol=1e-5)
     print("2D Test passed!")
 
     # Test 3D (typical transformer shape: batch, seq, hidden)
-    x = torch.randn(2, 64, 48, dtype=torch.float32, device='cuda')
+    x = cp.random.randn(2, 64, 48, dtype=cp.float32)
     y_cutile = cutile_gelu(x)
-    y_torch = torch_gelu(x)
+    y_cupy = cupy_gelu(x)
 
-    print(f"3D Test - Max diff: {(y_cutile - y_torch).abs().max().item():.6f}")
-    torch.testing.assert_close(y_cutile, y_torch, atol=1e-5, rtol=1e-5)
+    print(f"3D Test - Max diff: {cp.abs(y_cutile - y_cupy).max():.6f}")
+    cp.testing.assert_allclose(y_cutile, y_cupy, atol=1e-5, rtol=1e-5)
     print("3D Test passed!")
 
     print("\n--- All GELU tests passed! ---")

@@ -1,0 +1,153 @@
+<svg width="920" height="500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Title -->
+  <text x="460" y="30" font-family="Arial, sans-serif" font-size="24" font-weight="bold" text-anchor="middle" fill="#333">
+    cutileGPT Architecture: 100% Non-PyTorch
+  </text>
+
+  <!-- Application Layer -->
+  <rect x="60" y="60" width="800" height="80" fill="#e8f5e9" stroke="#76b900" stroke-width="2" rx="8"/>
+  <text x="460" y="88" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#5a8f00">
+    Application Layer (Python)
+  </text>
+  <text x="460" y="110" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#555">
+    CutileGPT Model • Weight Management • Generation Logic
+  </text>
+  <text x="460" y="128" font-family="Arial, sans-serif" font-size="12" text-anchor="middle" fill="#666">
+    (100% CuPy - No PyTorch dependency)
+  </text>
+
+  <!-- Array Management Layer -->
+  <rect x="60" y="160" width="380" height="100" fill="#e0f7fa" stroke="#00bcd4" stroke-width="2" rx="8"/>
+  <text x="250" y="188" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#00838f">
+    Array Management
+  </text>
+  <text x="250" y="210" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#555">
+    CuPy (NumPy-compatible)
+  </text>
+  <text x="250" y="228" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+    • Memory allocation
+  </text>
+  <text x="250" y="244" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+    • Shape operations
+  </text>
+
+  <!-- Kernel Layer -->
+  <rect x="480" y="160" width="380" height="100" fill="#fff3e0" stroke="#ff9800" stroke-width="2" rx="8"/>
+  <text x="670" y="188" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#e65100">
+    GPU Kernels
+  </text>
+  <text x="670" y="210" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#555">
+    NVIDIA cutile (cuda.tile)
+  </text>
+  <text x="670" y="228" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+    • Tile-based programming
+  </text>
+  <text x="670" y="244" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#666">
+    • Custom CUDA kernels
+  </text>
+
+  <!-- Kernel Components (Unified green tones) -->
+  <g transform="translate(60, 280)">
+    <!-- Linear -->
+    <rect x="0" y="0" width="130" height="60" fill="#76b900" stroke="#5a8f00" stroke-width="2" rx="6"/>
+    <text x="65" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      Linear
+    </text>
+    <text x="65" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      MatMul + 2D Swizzle
+    </text>
+    <text x="65" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#e8f5e9">
+      TMA • TF32
+    </text>
+
+    <!-- Attention -->
+    <rect x="140" y="0" width="130" height="60" fill="#00bcd4" stroke="#00838f" stroke-width="2" rx="6"/>
+    <text x="205" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      Attention
+    </text>
+    <text x="205" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      Flash Attention
+    </text>
+    <text x="205" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#e0f7fa">
+      Online Softmax
+    </text>
+
+    <!-- LayerNorm -->
+    <rect x="280" y="0" width="130" height="60" fill="#ff9800" stroke="#e65100" stroke-width="2" rx="6"/>
+    <text x="345" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      LayerNorm
+    </text>
+    <text x="345" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      Welford Algorithm
+    </text>
+    <text x="345" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff3e0">
+      Single-pass
+    </text>
+
+    <!-- GELU -->
+    <rect x="420" y="0" width="130" height="60" fill="#76b900" stroke="#5a8f00" stroke-width="2" rx="6"/>
+    <text x="485" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      GELU
+    </text>
+    <text x="485" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      Activation
+    </text>
+    <text x="485" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#e8f5e9">
+      GPT-2 approx
+    </text>
+
+    <!-- Embedding -->
+    <rect x="560" y="0" width="130" height="60" fill="#00bcd4" stroke="#00838f" stroke-width="2" rx="6"/>
+    <text x="625" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      Embedding
+    </text>
+    <text x="625" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      Lookup
+    </text>
+    <text x="625" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#e0f7fa">
+      Gather op
+    </text>
+
+    <!-- Fused MLP -->
+    <rect x="700" y="0" width="130" height="60" fill="#ff9800" stroke="#e65100" stroke-width="2" rx="6"/>
+    <text x="765" y="25" font-family="Arial, sans-serif" font-size="12" font-weight="bold" text-anchor="middle" fill="#fff">
+      Fused MLP
+    </text>
+    <text x="765" y="42" font-family="Arial, sans-serif" font-size="10" text-anchor="middle" fill="#fff">
+      3-in-1 Kernel
+    </text>
+    <text x="765" y="55" font-family="Arial, sans-serif" font-size="9" text-anchor="middle" fill="#fff3e0">
+      Bandwidth ↓
+    </text>
+  </g>
+
+  <!-- Hardware Layer -->
+  <rect x="60" y="360" width="800" height="80" fill="#263238" stroke="#000" stroke-width="2" rx="8"/>
+  <text x="460" y="388" font-family="Arial, sans-serif" font-size="16" font-weight="bold" text-anchor="middle" fill="#76b900">
+    NVIDIA GPU Hardware
+  </text>
+  <text x="460" y="410" font-family="Arial, sans-serif" font-size="13" text-anchor="middle" fill="#90a4ae">
+    Blackwell (SM_121) • Hopper (SM_100) • Tensor Cores • TMA
+  </text>
+  <text x="460" y="428" font-family="Arial, sans-serif" font-size="11" text-anchor="middle" fill="#b0bec5">
+    CUDA 13.0+ • Compute Capability 10.x / 12.x
+  </text>
+
+  <!-- Arrows -->
+  <defs>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#666" />
+    </marker>
+  </defs>
+
+  <line x1="250" y1="260" x2="250" y2="280" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="670" y1="260" x2="670" y2="280" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+  <line x1="460" y1="340" x2="460" y2="360" stroke="#666" stroke-width="2" marker-end="url(#arrowhead)"/>
+
+  <!-- No PyTorch badge -->
+  <circle cx="830" cy="100" r="35" fill="#f44336" opacity="0.9"/>
+  <line x1="805" y1="85" x2="855" y2="115" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <text x="830" y="155" font-family="Arial, sans-serif" font-size="11" font-weight="bold" text-anchor="middle" fill="#f44336">
+    No PyTorch!
+  </text>
+</svg>

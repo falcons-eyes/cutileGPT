@@ -14,6 +14,7 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import cupy as cp
 
 # Add minGPT to path (external submodule)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'external', 'minGPT'))
@@ -42,8 +43,8 @@ def create_mingpt_model(config: CutileGPTConfig) -> GPT:
     return model
 
 
-def benchmark_forward(model, idx, warmup=5, iterations=20):
-    """Benchmark forward pass latency."""
+def benchmark_forward_torch(model, idx, warmup=5, iterations=20):
+    """Benchmark forward pass latency for PyTorch models."""
     # Warmup
     for _ in range(warmup):
         with torch.no_grad():
@@ -70,14 +71,47 @@ def benchmark_forward(model, idx, warmup=5, iterations=20):
     }
 
 
-def compare_outputs(mingpt_model, cutile_model, idx, atol=1e-3, rtol=1e-3):
+def benchmark_forward_cupy(model, idx_cupy, warmup=5, iterations=20):
+    """Benchmark forward pass latency for CuPy-based models."""
+    # Warmup
+    for _ in range(warmup):
+        _ = model.forward(idx_cupy)
+    cp.cuda.Device().synchronize()
+
+    # Timed iterations
+    times = []
+    for i in range(iterations):
+        start = cp.cuda.Event()
+        end = cp.cuda.Event()
+
+        start.record()
+        _ = model.forward(idx_cupy)
+        end.record()
+        end.synchronize()
+
+        times.append(cp.cuda.get_elapsed_time(start, end))
+
+    return {
+        'mean_ms': sum(times) / len(times),
+        'min_ms': min(times),
+        'max_ms': max(times),
+    }
+
+
+def compare_outputs(mingpt_model, cutile_model, idx_torch, atol=1e-3, rtol=1e-3):
     """Compare outputs between minGPT and cutile GPT."""
     with torch.no_grad():
         # minGPT forward
-        mingpt_logits, _ = mingpt_model(idx)
+        mingpt_logits, _ = mingpt_model(idx_torch)
+
+        # Convert to cupy for cutile GPT
+        idx_cupy = cp.asarray(idx_torch.cpu().numpy())
 
         # cutile GPT forward
-        cutile_logits, _ = cutile_model.forward(idx)
+        cutile_logits_cupy, _ = cutile_model.forward(idx_cupy)
+
+        # Convert back to torch for comparison
+        cutile_logits = torch.from_numpy(cp.asnumpy(cutile_logits_cupy)).cuda()
 
     # Compare
     diff = (mingpt_logits - cutile_logits).abs()
@@ -160,11 +194,11 @@ def main():
     cutile_model.load_from_mingpt(mingpt_model)
 
     # Create test input
-    idx = torch.randint(0, config.vocab_size, (args.batch_size, args.seq_len), device='cuda')
+    idx_torch = torch.randint(0, config.vocab_size, (args.batch_size, args.seq_len), device='cuda')
 
     # Compare outputs
     print("\n--- Correctness Comparison ---")
-    comparison = compare_outputs(mingpt_model, cutile_model, idx)
+    comparison = compare_outputs(mingpt_model, cutile_model, idx_torch)
 
     print(f"Max absolute difference: {comparison['max_diff']:.6e}")
     print(f"Mean absolute difference: {comparison['mean_diff']:.6e}")
@@ -192,14 +226,15 @@ def main():
 
         # minGPT benchmark
         print("\nBenchmarking minGPT (AS-IS)...")
-        mingpt_stats = benchmark_forward(mingpt_model, idx, iterations=args.iterations)
+        mingpt_stats = benchmark_forward_torch(mingpt_model, idx_torch, iterations=args.iterations)
         print(f"  Mean: {mingpt_stats['mean_ms']:.3f} ms")
         print(f"  Min:  {mingpt_stats['min_ms']:.3f} ms")
         print(f"  Max:  {mingpt_stats['max_ms']:.3f} ms")
 
         # cutile GPT benchmark
+        idx_cupy = cp.asarray(idx_torch.cpu().numpy())
         print("\nBenchmarking cutile GPT (TO-BE)...")
-        cutile_stats = benchmark_forward(cutile_model, idx, iterations=args.iterations)
+        cutile_stats = benchmark_forward_cupy(cutile_model, idx_cupy, iterations=args.iterations)
         print(f"  Mean: {cutile_stats['mean_ms']:.3f} ms")
         print(f"  Min:  {cutile_stats['min_ms']:.3f} ms")
         print(f"  Max:  {cutile_stats['max_ms']:.3f} ms")
