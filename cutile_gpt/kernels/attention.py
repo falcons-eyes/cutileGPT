@@ -181,7 +181,9 @@ def cutile_mha_forward(
     c_attn_bias: cp.ndarray,
     c_proj_weight: cp.ndarray,
     c_proj_bias: cp.ndarray,
-    n_head: int
+    n_head: int,
+    c_attn_weight_t: cp.ndarray = None,
+    c_proj_weight_t: cp.ndarray = None
 ) -> cp.ndarray:
     """
     Full multi-head attention forward pass (matching minGPT).
@@ -193,6 +195,8 @@ def cutile_mha_forward(
         c_proj_weight: Output projection weight (n_embd, n_embd)
         c_proj_bias: Output projection bias (n_embd,)
         n_head: Number of attention heads
+        c_attn_weight_t: Optional pre-transposed c_attn_weight
+        c_proj_weight_t: Optional pre-transposed c_proj_weight
 
     Returns:
         Output tensor (batch, seq_len, n_embd)
@@ -203,7 +207,7 @@ def cutile_mha_forward(
     head_dim = n_embd // n_head
 
     # Combined QKV projection
-    qkv = cutile_linear_bias(x, c_attn_weight, c_attn_bias)  # (B, T, 3*n_embd)
+    qkv = cutile_linear_bias(x, c_attn_weight, c_attn_bias, c_attn_weight_t)  # (B, T, 3*n_embd)
 
     # Split into Q, K, V
     q, k, v = cp.split(qkv, 3, axis=2)
@@ -223,7 +227,7 @@ def cutile_mha_forward(
     y = cp.reshape(y, (batch, seq_len, n_embd))
 
     # Output projection
-    y = cutile_linear_bias(y, c_proj_weight, c_proj_bias)
+    y = cutile_linear_bias(y, c_proj_weight, c_proj_bias, c_proj_weight_t)
 
     return y
 

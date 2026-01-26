@@ -17,14 +17,12 @@ try:
     from .kernels.linear import cutile_linear, cutile_linear_bias
     from .kernels.layernorm import cutile_layer_norm
     from .kernels.attention import cutile_mha_forward
-    from .kernels.fused_mlp import cutile_fused_mlp
 except ImportError:
     from kernels.gelu import cutile_gelu
     from kernels.embedding import cutile_embedding
     from kernels.linear import cutile_linear, cutile_linear_bias
     from kernels.layernorm import cutile_layer_norm
     from kernels.attention import cutile_mha_forward
-    from kernels.fused_mlp import cutile_fused_mlp
 
 
 @dataclass
@@ -85,11 +83,14 @@ class CutileGPT:
     def __init__(self, config: CutileGPTConfig, device: str = 'cuda', use_fused_mlp: bool = False):
         self.config = config
         self.device = device
-        self.use_fused_mlp = use_fused_mlp
+        # use_fused_mlp is deprecated but kept for backward compatibility
+        self.use_fused_mlp = False  # Always False, fused MLP removed
 
         # Initialize weight containers
         self.weights = {}
+        self.weight_transposes = {}  # Pre-computed transposes for performance
         self._init_weights()
+        self._precompute_transposes()
 
     def _init_weights(self):
         """Initialize weight tensors (random initialization)."""
@@ -134,6 +135,16 @@ class CutileGPT:
 
         # Language model head (tied with wte in minGPT, but we keep separate for clarity)
         self.weights['lm_head.weight'] = self.weights['wte']  # Weight tying
+
+    def _precompute_transposes(self):
+        """Precompute and cache weight transposes for performance optimization."""
+        for key, weight in self.weights.items():
+            # Only transpose 2D weight matrices (not biases or embeddings)
+            if 'weight' in key and weight.ndim == 2:
+                weight_t = cp.transpose(weight)
+                if not weight_t.flags.c_contiguous:
+                    weight_t = cp.ascontiguousarray(weight_t)
+                self.weight_transposes[key] = weight_t
 
     def load_from_mingpt(self, mingpt_model):
         """
@@ -185,6 +196,9 @@ class CutileGPT:
         # LM head (weight tied with wte)
         self.weights['lm_head.weight'] = torch_to_cupy(sd['lm_head.weight'])
 
+        # Recompute transposes after loading new weights
+        self._precompute_transposes()
+
     def __call__(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
         """Make model callable."""
         return self.forward(idx)
@@ -229,7 +243,9 @@ class CutileGPT:
                 self.weights[prefix + 'attn.c_attn.bias'],
                 self.weights[prefix + 'attn.c_proj.weight'],
                 self.weights[prefix + 'attn.c_proj.bias'],
-                cfg.n_head
+                cfg.n_head,
+                self.weight_transposes.get(prefix + 'attn.c_attn.weight'),
+                self.weight_transposes.get(prefix + 'attn.c_proj.weight')
             )
             x = x + attn_out
 
@@ -240,28 +256,20 @@ class CutileGPT:
                 self.weights[prefix + 'ln_2.bias']
             )
 
-            if self.use_fused_mlp:
-                # Fused MLP: single kernel for Linear -> GELU -> Linear
-                mlp_out = cutile_fused_mlp(
-                    x_norm,
-                    self.weights[prefix + 'mlp.c_fc.weight'],
-                    self.weights[prefix + 'mlp.c_fc.bias'],
-                    self.weights[prefix + 'mlp.c_proj.weight'],
-                    self.weights[prefix + 'mlp.c_proj.bias']
-                )
-            else:
-                # Separate kernels: Linear -> GELU -> Linear
-                hidden = cutile_linear_bias(
-                    x_norm,
-                    self.weights[prefix + 'mlp.c_fc.weight'],
-                    self.weights[prefix + 'mlp.c_fc.bias']
-                )
-                hidden = cutile_gelu(hidden)
-                mlp_out = cutile_linear_bias(
-                    hidden,
-                    self.weights[prefix + 'mlp.c_proj.weight'],
-                    self.weights[prefix + 'mlp.c_proj.bias']
-                )
+            # MLP: Linear -> GELU -> Linear
+            hidden = cutile_linear_bias(
+                x_norm,
+                self.weights[prefix + 'mlp.c_fc.weight'],
+                self.weights[prefix + 'mlp.c_fc.bias'],
+                self.weight_transposes.get(prefix + 'mlp.c_fc.weight')
+            )
+            hidden = cutile_gelu(hidden)
+            mlp_out = cutile_linear_bias(
+                hidden,
+                self.weights[prefix + 'mlp.c_proj.weight'],
+                self.weights[prefix + 'mlp.c_proj.bias'],
+                self.weight_transposes.get(prefix + 'mlp.c_proj.weight')
+            )
             x = x + mlp_out
 
         # Final LayerNorm
@@ -272,7 +280,8 @@ class CutileGPT:
         )
 
         # Language model head
-        logits = cutile_linear(x, self.weights['lm_head.weight'])
+        logits = cutile_linear(x, self.weights['lm_head.weight'],
+                              self.weight_transposes.get('lm_head.weight'))
 
         return logits, None
 

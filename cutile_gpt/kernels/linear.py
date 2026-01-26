@@ -109,13 +109,15 @@ def matmul_bias_kernel(A, B, bias, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     ct.store(C, index=(bid_m, bid_n), tile=acc.astype(C.dtype))
 
 
-def cutile_linear(x: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
+def cutile_linear(x: cp.ndarray, weight: cp.ndarray, weight_t: cp.ndarray = None) -> cp.ndarray:
     """
     Linear transformation without bias: y = x @ weight.T
 
     Args:
         x: Input tensor (..., in_features)
         weight: Weight matrix (out_features, in_features)
+        weight_t: Optional pre-transposed weight (in_features, out_features).
+                  If provided, avoids transpose operation for better performance.
 
     Returns:
         Output tensor (..., out_features)
@@ -134,10 +136,11 @@ def cutile_linear(x: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
     M = x_2d.shape[0]
     N = out_features
 
-    # Transpose weight for x @ W^T
-    weight_t = cp.transpose(weight)  # (in_features, out_features)
-    if not weight_t.flags.c_contiguous:
-        weight_t = cp.ascontiguousarray(weight_t)
+    # Use pre-computed transpose if available, otherwise compute it
+    if weight_t is None:
+        weight_t = cp.transpose(weight)  # (in_features, out_features)
+        if not weight_t.flags.c_contiguous:
+            weight_t = cp.ascontiguousarray(weight_t)
 
     # Output
     output = cp.empty((M, N), dtype=x.dtype)
@@ -161,7 +164,8 @@ def cutile_linear(x: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
 def cutile_linear_bias(
     x: cp.ndarray,
     weight: cp.ndarray,
-    bias: cp.ndarray
+    bias: cp.ndarray,
+    weight_t: cp.ndarray = None
 ) -> cp.ndarray:
     """
     Fused linear transformation with bias: y = x @ weight.T + bias
@@ -172,6 +176,8 @@ def cutile_linear_bias(
         x: Input tensor (..., in_features)
         weight: Weight matrix (out_features, in_features)
         bias: Bias vector (out_features,)
+        weight_t: Optional pre-transposed weight (in_features, out_features).
+                  If provided, avoids transpose operation for better performance.
 
     Returns:
         Output tensor (..., out_features)
@@ -190,10 +196,11 @@ def cutile_linear_bias(
     M = x_2d.shape[0]
     N = out_features
 
-    # Transpose weight
-    weight_t = cp.transpose(weight)
-    if not weight_t.flags.c_contiguous:
-        weight_t = cp.ascontiguousarray(weight_t)
+    # Use pre-computed transpose if available, otherwise compute it
+    if weight_t is None:
+        weight_t = cp.transpose(weight)
+        if not weight_t.flags.c_contiguous:
+            weight_t = cp.ascontiguousarray(weight_t)
 
     # Output
     output = cp.empty((M, N), dtype=x.dtype)
