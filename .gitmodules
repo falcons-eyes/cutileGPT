@@ -4,3 +4,6 @@
 [submodule "external/minGPT"]
 	path = external/minGPT
 	url = https://github.com/karpathy/minGPT.git
+[submodule "external/cuda-tile"]
+	path = external/cuda-tile
+	url = https://github.com/NVIDIA/cuda-tile.git

@@ -23,8 +23,22 @@ wheels/
 # pytest
 .pytest_cache/
 
-# uv
-uv.lock
-
 # Claude
 .claude/
+
+# MLIR Research (optional build artifacts)
+mlir_research/build/
+mlir_research/tools/
+mlir_research/cutile_gpt_mlir/compiled/
+*.tilebc
+*.cmake
+
+# Log files
+logs/*.txt
+logs/*.log
+*.log
+
+# Temporary build files
+cmake_*.log
+CMakeCache.txt
+CMakeFiles/

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg width="850" height="460" xmlns="http://www.w3.org/2000/svg">
+<svg width="850" height="550" xmlns="http://www.w3.org/2000/svg">
   <title>Performance Comparison: PyTorch vs. cutile+CuPy</title>
   <desc>A bar chart comparing the forward pass latency in milliseconds between PyTorch and cutile+CuPy for different tile sizes on an NVIDIA GB10 GPU.</desc>
   <defs>
@@ -50,31 +50,31 @@
       <text x="220" y="184" class="bar-value">0.834</text>
       <rect x="275" y="252" width="70" height="178" fill="url(#cutileGrad)" rx="4"/>
       <text x="310" y="244" class="bar-value">0.714</text>
-      <rect x="267" y="435" width="80" height="25" fill="#76b900" rx="12"/>
-      <text x="307" y="452" class="badge-text">1.17x ⚡</text>
-      <text x="262" y="405" class="x-label">tile-small</text>
+      <rect x="267" y="410" width="80" height="25" fill="#76b900" rx="12"/>
+      <text x="307" y="427" class="badge-text">1.17x ⚡</text>
+      <text x="262" y="445" class="x-label">tile-small</text>
 
       <!-- tile-medium -->
       <rect x="425" y="128" width="70" height="302" fill="url(#torchGrad)" rx="4"/>
       <text x="460" y="120" class="bar-value">1.093</text>
       <rect x="515" y="190" width="70" height="240" fill="url(#cutileGrad)" rx="4"/>
       <text x="550" y="182" class="bar-value">0.836</text>
-      <rect x="507" y="435" width="80" height="25" fill="#76b900" rx="12"/>
-      <text x="547" y="452" class="badge-text">1.31x ⚡</text>
-      <text x="502" y="405" class="x-label">tile-medium</text>
+      <rect x="507" y="410" width="80" height="25" fill="#76b900" rx="12"/>
+      <text x="547" y="427" class="badge-text">1.31x ⚡</text>
+      <text x="502" y="445" class="x-label">tile-medium</text>
 
       <!-- tile-large -->
       <rect x="665" y="44" width="70" height="386" fill="url(#torchGrad)" rx="4"/>
       <text x="700" y="36" class="bar-value">1.436</text>
       <rect x="755" y="128" width="70" height="302" fill="url(#cutileGrad)" rx="4"/>
       <text x="790" y="120" class="bar-value">1.093</text>
-      <rect x="747" y="435" width="80" height="25" fill="#76b900" rx="12"/>
-      <text x="787" y="452" class="badge-text">1.31x ⚡</text>
-      <text x="742" y="405" class="x-label">tile-large</text>
+      <rect x="747" y="410" width="80" height="25" fill="#76b900" rx="12"/>
+      <text x="787" y="427" class="badge-text">1.31x ⚡</text>
+      <text x="742" y="445" class="x-label">tile-large</text>
     </g>
 
     <!-- Legend -->
-    <g transform="translate(0, 430)">
+    <g transform="translate(0, 490)">
       <rect x="290" y="0" width="20" height="12" fill="url(#torchGrad)" rx="2"/>
       <text x="315" y="9" class="legend-text">PyTorch (AS-IS)</text>
       <rect x="460" y="0" width="20" height="12" fill="url(#cutileGrad)" rx="2"/>
