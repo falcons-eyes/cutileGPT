@@ -42,3 +42,6 @@ logs/*.log
 cmake_*.log
 CMakeCache.txt
 CMakeFiles/
+
+# External dependencies (not submodules)
+external/llvm-project/
