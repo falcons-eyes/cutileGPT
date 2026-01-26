@@ -2,9 +2,9 @@
 
 **Pure Tile Programming Philosophy GPU Kernels & Model**
 
-이 디렉토리는 cutileGPT의 핵심 구현을 포함합니다.
+This directory contains the core implementation of cutileGPT.
 
-## 📁 구조
+## 📁 Structure
 
 ```
 cutile_gpt/
@@ -23,15 +23,15 @@ cutile_gpt/
 
 ### LayerNorm ([layernorm.py](kernels/layernorm.py))
 
-**철학**: Declarative normalization - NO manual synchronization
+**Philosophy**: Declarative normalization - NO manual synchronization
 
-**특징**:
+**Features**:
 - Welford's algorithm for numerical stability
 - Two-pass approach: statistics → normalize
 - Power-of-2 padding for tile constraints
 - Automatic thread management
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.kernels.layernorm import cutile_layer_norm
 
@@ -44,40 +44,40 @@ y = cutile_layer_norm(x, weight, bias)
 
 ### GELU ([gelu.py](kernels/gelu.py))
 
-**성능**: **8.3x faster** than CuPy! (Verified)
+**Performance**: **8.3x faster** than CuPy
 
-**철학**: Pure element-wise operations, compiler handles parallelization
+**Philosophy**: Pure element-wise operations, compiler handles parallelization
 
-**특징**:
+**Features**:
 - GPT-2 style approximation: `0.5 * x * (1 + tanh(...))`
 - Automatic vectorization
 - No thread management
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.kernels.gelu import cutile_gelu
 
 x = cp.random.randn(batch, seq, hidden, dtype=cp.float32)
-y = cutile_gelu(x)  # 8.3x faster!
+y = cutile_gelu(x)
 ```
 
-**벤치마크** (32 × 512 × 768 tensor):
+**Benchmark** (32 × 512 × 768 tensor):
 - Tile kernel: 0.600 ms
 - CuPy kernel: 4.978 ms
-- **Speedup: 8.3x** (Verified on GB10/Blackwell)
+- **Speedup: 8.3x**
 
 ### Linear ([linear.py](kernels/linear.py))
 
-**철학**: Declarative matmul - compiler handles tile operations
+**Philosophy**: Declarative matmul - compiler handles tile operations
 
-**특징**:
+**Features**:
 - Tile-based matrix multiplication
 - Automatic Tensor Core dispatch
-- Weight transpose caching (28% speedup)
+- Weight transpose caching
 - 2D swizzle pattern for L2 cache locality
 - TMA (Tensor Memory Accelerator) on Hopper/Blackwell
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.kernels.linear import cutile_linear_bias
 
@@ -90,16 +90,16 @@ y = cutile_linear_bias(x, weight, bias)
 
 ### Attention ([attention.py](kernels/attention.py))
 
-**철학**: Flash Attention - O(N) memory, not O(N²)
+**Philosophy**: Flash Attention - O(N) memory, not O(N²)
 
-**특징**:
+**Features**:
 - Online softmax algorithm
 - Causal masking support
 - Multi-head attention
 - TMA for async memory transfers
 - NO full attention matrix materialization
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.kernels.attention import cutile_causal_attention
 
@@ -111,15 +111,15 @@ y = cutile_causal_attention(q, k, v, n_head)
 
 ### model_tile.py - Pure Tile Philosophy
 
-**완전한 GPT 구현 with ZERO explicit thread management**
+**Complete GPT implementation with ZERO explicit thread management**
 
-**특징**:
+**Features**:
 - All operations declarative
 - Transformer blocks with residual connections
 - Text generation support
 - minGPT weight loading
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.model_tile import create_gpt_nano, CutileGPT, GPTConfig
 
@@ -145,9 +145,9 @@ model = CutileGPT(config)
 
 ### model.py - Original Implementation
 
-**기존 CuPy 기반 구현 (PyTorch parity 달성)**
+**Original CuPy-based implementation (PyTorch competitive)**
 
-**사용법**:
+**Usage**:
 ```python
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
 
@@ -157,41 +157,41 @@ model = CutileGPT(config)
 logits, _ = model(idx)
 ```
 
-## 🔧 최적화 기법
+## 🔧 Optimization Techniques
 
 ### 1. Weight Transpose Caching
-모든 weight transpose를 초기화 시 pre-compute
-- **Impact**: 28% average speedup
+Pre-compute all weight transposes during initialization
+- Reduces runtime overhead
 
 ### 2. Flash Attention
-Online softmax로 메모리 효율적
+Online softmax for memory efficiency
 - **Memory**: O(N) instead of O(N²)
 
 ### 3. TF32 Tensor Cores
-`float32` 입력 자동 TF32 변환
-- **Impact**: 8x faster than FP32 CUDA cores
+Automatic TF32 conversion for `float32` inputs
+- 8x faster than FP32 CUDA cores
 
 ### 4. 2D Swizzle Pattern
-L2 cache locality 최적화
+L2 cache locality optimization
 - Better cache hit rate
 
 ### 5. TMA (Tensor Memory Accelerator)
-Hopper/Blackwell 하드웨어 가속
+Hopper/Blackwell hardware acceleration
 - Async memory transfers
 
-## 📊 성능
+## 📊 Performance
 
 ### Kernel Level
 | Kernel | Tile | CuPy | Speedup |
 |--------|------|------|---------|
-| GELU (32×512×768) | 0.600 ms | 4.978 ms | **8.3x** (Verified) |
+| GELU (32×512×768) | 0.600 ms | 4.978 ms | **8.3x** |
 | LayerNorm | Fast | Reference | Competitive |
 | Linear | Fast | Reference | Competitive |
 
 ### Model Level
 | Model | cutileGPT | PyTorch | Result |
 |-------|-----------|---------|--------|
-| gpt_tile_medium (batch=8, seq=128) | 5.399 ms | 5.174 ms | **Within 4% of PyTorch** |
+| gpt_tile_medium (batch=8, seq=128) | 5.399 ms | 5.174 ms | **Competitive** |
 
 ## 🧪 Testing
 
@@ -217,7 +217,7 @@ python cutile_gpt/compare.py --model nano
 **cutile_gelu(x)**
 - Input: Any shape
 - Output: Same shape
-- 8.3x faster than CuPy (Verified)
+- 8.3x faster than CuPy
 
 **cutile_linear_bias(x, weight, bias, weight_t=None)**
 - Input: `(..., in_features)`
@@ -235,20 +235,20 @@ python cutile_gpt/compare.py --model nano
 - `generate(idx, max_new_tokens, temperature, top_k)` - Generate text
 - `load_from_mingpt(mingpt_model)` - Load PyTorch weights
 
-## 🎓 Tile Philosophy 원칙
+## 🎓 Tile Philosophy Principles
 
-이 구현의 모든 커널은 다음 원칙을 따릅니다:
+All kernels in this implementation follow these principles:
 
-1. **Declarative** - WHAT을 명시, HOW는 컴파일러
+1. **Declarative** - Specify WHAT, compiler handles HOW
 2. **No thread IDs** - `ct.bid()` only, no `threadIdx`
 3. **No synchronization** - No `__syncthreads()`
 4. **High-level ops** - `ct.load()`, `ct.sum()`, `ct.mma()`
 5. **Compiler-driven** - Automatic optimization
 
-## 🔗 참고
+## 🔗 References
 
-- [demo_tile_gpt.py](../demo_tile_gpt.py) - 완전한 실행 예제
-- [TILE_PHILOSOPHY_DEMO.md](../TILE_PHILOSOPHY_DEMO.md) - 철학 문서
+- [demo_tile_gpt.py](../demo_tile_gpt.py) - Complete executable demo
+- [TILE_PHILOSOPHY_DEMO.md](../docs/TILE_PHILOSOPHY_DEMO.md) - Philosophy documentation
 - [NVIDIA CUDA Tile Docs](https://docs.nvidia.com/cuda/tile-ir/)
 
 ---

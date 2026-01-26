@@ -37,18 +37,16 @@ def kernel(X, Y, N):
 
 ---
 
-## 🚀 Key Results (Verified)
+## 🚀 Key Results
 
 ### Performance
 
 | Metric | Result |
 |--------|--------|
-| **GELU Kernel** | **8.3x faster** than CuPy (0.600ms vs 4.978ms) |
-| **Full Model** | **Within 4% of PyTorch** (5.399ms vs 5.174ms) |
+| **GELU Kernel** | **8.3x faster** than CuPy |
+| **Full Model** | **Competitive with PyTorch** |
 | **Code Reduction** | **87% less code** (150 lines → 20 lines) |
 | **Dependency Size** | **200x smaller** (~10MB vs ~2GB) |
-
-*Tested on NVIDIA GB10 (Blackwell, SM_121)*
 
 ### Benefits
 
@@ -225,8 +223,11 @@ cutileGPT/
 │   └── README.md                    # Detailed implementation docs
 │
 ├── demo_tile_gpt.py                 # 🎮 Complete Demo
-├── TILE_PHILOSOPHY_DEMO.md          # 📖 Philosophy documentation
-├── ARCHITECTURE_VISION.md           # 🏗️ Project vision
+│
+├── docs/                            # Documentation
+│   ├── TILE_PHILOSOPHY_DEMO.md      # Philosophy deep dive
+│   ├── ARCHITECTURE_VISION.md       # Project vision
+│   └── PROJECT_STRUCTURE.md         # Directory guide
 │
 ├── profiling_results/               # Performance data & dashboard
 ├── mlir_research/                   # 🧪 Optional MLIR research
@@ -236,8 +237,8 @@ cutileGPT/
 **Start here**:
 - 🎮 [demo_tile_gpt.py](demo_tile_gpt.py) - Run the complete demo
 - 🎯 [cutile_gpt/README.md](cutile_gpt/README.md) - Implementation details & API reference
-- 📖 [TILE_PHILOSOPHY_DEMO.md](TILE_PHILOSOPHY_DEMO.md) - Philosophy deep dive
-- 📁 [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) - Complete directory guide
+- 📖 [docs/TILE_PHILOSOPHY_DEMO.md](docs/TILE_PHILOSOPHY_DEMO.md) - Philosophy deep dive
+- 📁 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Complete directory guide
 
 ---
 
@@ -286,7 +287,7 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 
 ### ✅ Performance is Competitive
 - **8.3x speedup** on GELU kernel vs CuPy
-- **Within 4% of PyTorch** on full model
+- **Competitive with PyTorch** on full model
 - Compiler optimization is effective
 
 ### ✅ Code is Maintainable
@@ -323,9 +324,9 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 
 - 🎮 **[demo_tile_gpt.py](demo_tile_gpt.py)** - Run the demo!
 - 🎯 **[cutile_gpt/README.md](cutile_gpt/README.md)** - API reference & implementation details
-- 📖 **[TILE_PHILOSOPHY_DEMO.md](TILE_PHILOSOPHY_DEMO.md)** - Complete philosophy documentation
-- 🏗️ **[ARCHITECTURE_VISION.md](ARCHITECTURE_VISION.md)** - Project vision & roadmap
-- 🔬 **[CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md](CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md)** - Deep analysis
+- 📖 **[docs/TILE_PHILOSOPHY_DEMO.md](docs/TILE_PHILOSOPHY_DEMO.md)** - Complete philosophy documentation
+- 🏗️ **[docs/ARCHITECTURE_VISION.md](docs/ARCHITECTURE_VISION.md)** - Project vision & roadmap
+- 🔬 **[docs/CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md](docs/CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md)** - Deep analysis
 
 ---
 
