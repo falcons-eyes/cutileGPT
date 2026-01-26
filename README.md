@@ -48,14 +48,19 @@ def kernel(X, Y, N):
 | **Code Reduction** | **87% less code** (150 lines → 20 lines) |
 | **Dependency Size** | **200x smaller** (~10MB vs ~2GB) |
 
-### Benefits
+### Benefits: The Dramatic Simplification
 
-| Traditional CUDA | **Tile Programming** |
-|-----------------|---------------------|
-| ❌ Manual thread management | ✅ **Compiler handles** |
-| ❌ Explicit `__syncthreads()` | ✅ **Auto dependencies** |
-| ❌ ~150 lines/kernel | ✅ **~20 lines** |
-| ❌ GPU-specific code | ✅ **Hardware portable** |
+<p align="center">
+  <img src="docs/assets/code_comparison.svg" alt="Code Comparison" width="1000"/>
+</p>
+
+**87% less code**: Traditional CUDA kernels require ~150 lines with manual thread management, explicit synchronization, and GPU-specific optimizations. Tile Programming reduces this to ~20 lines of clean, declarative code where the compiler handles everything.
+
+<p align="center">
+  <img src="docs/assets/architecture_simplification.svg" alt="Architecture Simplification" width="900"/>
+</p>
+
+**Simpler architecture**: Complex interconnected components (thread management, block config, sync logic, shared memory) collapse into a single declarative interface. The compiler automatically optimizes for your specific GPU.
 
 ---
 
