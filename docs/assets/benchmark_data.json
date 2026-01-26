@@ -1,0 +1,35 @@
+{
+  "gelu_benchmark": {
+    "tile_kernel_ms": 0.543,
+    "cupy_kernel_ms": 4.314,
+    "speedup": 7.95,
+    "tensor_shape": "(32, 512, 768)",
+    "total_elements": 12582912
+  },
+  "cutile_benchmarks": {
+    "gpt_nano": {
+      "latency_ms": 1.267,
+      "throughput": 202099
+    },
+    "gpt_small": {
+      "latency_ms": 6.243,
+      "throughput": 41008
+    },
+    "gpt_medium": {
+      "latency_ms": 10.132,
+      "throughput": 25267
+    }
+  },
+  "pytorch_comparison": {
+    "nano": {
+      "pytorch_ms": 2.372,
+      "cutile_ms": 2.888,
+      "ratio": 1.22
+    },
+    "medium": {
+      "pytorch_ms": 13.982,
+      "cutile_ms": 16.566,
+      "ratio": 1.18
+    }
+  }
+}

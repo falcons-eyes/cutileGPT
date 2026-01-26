@@ -59,6 +59,44 @@ def kernel(X, Y, N):
 
 ---
 
+## 📊 Performance Visualizations
+
+Real benchmark results from our GPU (NVIDIA GB10):
+
+### GELU Kernel Speedup
+
+<p align="center">
+  <img src="docs/assets/gelu_speedup.png" alt="GELU Kernel Speedup" width="700"/>
+</p>
+
+**8x faster** than CuPy on a large tensor (32×512×768 = 12M elements). Tile Programming's declarative approach enables aggressive compiler optimizations.
+
+### cutileGPT Performance
+
+<p align="center">
+  <img src="docs/assets/cutile_performance.png" alt="cutileGPT Performance" width="800"/>
+</p>
+
+Latency and throughput across different model sizes. Larger models benefit more from Tile Programming's efficient kernel fusion.
+
+### PyTorch Comparison
+
+<p align="center">
+  <img src="docs/assets/pytorch_comparison.png" alt="PyTorch vs cutileGPT" width="700"/>
+</p>
+
+Direct comparison with PyTorch minGPT. **Competitive performance** with significantly smaller footprint (~10MB vs ~2GB).
+
+### Tile Programming Philosophy
+
+<p align="center">
+  <img src="docs/assets/tile_philosophy.png" alt="Tile Philosophy" width="800"/>
+</p>
+
+The fundamental shift: specify **WHAT** (operations), let compiler handle **HOW** (threads, sync, memory).
+
+---
+
 ## ⚡ Quick Start
 
 ### Try the Demo
