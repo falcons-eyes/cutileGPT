@@ -20,7 +20,9 @@ import cupy as cp
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'external', 'minGPT'))
 from mingpt.model import GPT
 
-from model import CutileGPT, CutileGPTConfig
+# Add parent directory to path for cutile_gpt
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+from cutile_gpt.models import CutileGPT, GPTConfig as CutileGPTConfig
 
 
 def create_mingpt_model(config: CutileGPTConfig) -> GPT:

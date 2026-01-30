@@ -192,14 +192,19 @@ SUCCESS: All Tests Passed!
 
 ```python
 import cupy as cp
-from cutile_gpt.model_tile import create_gpt_nano
+from cutile_gpt import CutileGPT, GPTConfig
 
-# Create model (pure Tile Philosophy)
-model = create_gpt_nano()
+# Create model with preset config
+config = GPTConfig.gpt_nano()
+model = CutileGPT(config)
+
+# Or load from HuggingFace
+model = CutileGPT(GPTConfig.gpt2())
+model.load_from_huggingface('gpt2')
 
 # Forward pass
 tokens = cp.array([[100, 200, 300]], dtype=cp.int32)
-logits = model.forward(tokens)  # (1, 3, 50257)
+logits = model.forward(tokens)  # (1, 3, vocab_size)
 
 # Generate text
 generated = model.generate(tokens, max_new_tokens=50)
@@ -236,9 +241,8 @@ uv sync
 ### Individual Kernels
 
 ```python
-from cutile_gpt.kernels.layernorm import cutile_layer_norm
-from cutile_gpt.kernels.gelu import cutile_gelu
-from cutile_gpt.kernels.linear import cutile_linear_bias
+import cupy as cp
+from cutile_gpt import cutile_layer_norm, cutile_gelu, cutile_linear_bias
 
 # LayerNorm - Declarative, no manual sync
 x = cp.random.randn(4, 128, 768, dtype=cp.float32)
@@ -253,14 +257,46 @@ y = cutile_gelu(x)
 y = cutile_linear_bias(x, weight, bias)
 ```
 
+### Tile API (Fluent Builder)
+
+```python
+from cutile_gpt import tile, configure_tiles, TileConfig
+
+# Fluent API for declarative operations
+result = (
+    tile(x, "input")
+    .linear(weight, bias, out_features=768)
+    .gelu()
+    .execute()
+)
+
+# Configure tile sizes for optimization
+configure_tiles(TileConfig(tile_m=128, tile_n=128, use_tma=True))
+```
+
+### Data Auto-Profiling
+
+```python
+from cutile_gpt import DataAnalyzer
+
+# Auto-detect optimal tile configuration based on data
+analyzer = DataAnalyzer()
+profile = analyzer.analyze(input_tensor)
+print(f"Recommended config: {profile.recommended_config}")
+```
+
 ### Complete GPT Model
 
 ```python
-from cutile_gpt.model_tile import CutileGPT, GPTConfig
+from cutile_gpt import CutileGPT, GPTConfig
 
 # Custom config
 config = GPTConfig(n_layer=6, n_head=4, n_embd=256)
 model = CutileGPT(config)
+
+# Or use presets: gpt_nano, gpt2, gpt2_medium, gpt2_large, gpt2_xl
+model = CutileGPT(GPTConfig.gpt2())
+model.load_from_huggingface('gpt2')
 
 # Forward pass
 tokens = cp.array([[100, 200, 300]], dtype=cp.int32)
@@ -279,7 +315,10 @@ generated = model.generate(
 
 ```bash
 # Compare with PyTorch minGPT
-uv run python cutile_gpt/compare.py --benchmark --model tile-medium --batch-size 8 --seq-len 128
+uv run python scripts/compare_mingpt.py --benchmark --model tile-medium --batch-size 8 --seq-len 128
+
+# Run HuggingFace inference demo
+uv run python scripts/demo_hf_inference.py
 ```
 
 ---
@@ -321,26 +360,49 @@ uv run python cutile_gpt/compare.py --benchmark --model tile-medium --batch-size
 ```
 cutileGPT/
 ├── cutile_gpt/                      # 🎯 Core Implementation
-│   ├── model_tile.py                # Pure Tile Philosophy GPT
-│   ├── model.py                     # Original CuPy model
-│   ├── kernels/                     # Declarative Tile Kernels
-│   └── README.md                    # Detailed implementation docs
+│   ├── __init__.py                  # Package exports
+│   ├── api/                         # 🔧 High-level Tile API
+│   │   ├── tile_op.py               # Fluent Builder API (tile().linear().gelu())
+│   │   ├── config.py                # TileConfig, TensorSpec, Layout, DType
+│   │   └── profiler.py              # DataAnalyzer for auto-optimization
+│   │
+│   ├── models/                      # 🧠 GPT Model Implementations
+│   │   ├── gpt.py                   # CutileGPT (HuggingFace + minGPT support)
+│   │   └── config.py                # GPTConfig with presets
+│   │
+│   ├── kernels/                     # ⚡ Low-level CUDA Kernels
+│   │   ├── gelu.py                  # GELU activation (8.3x speedup)
+│   │   ├── layernorm.py             # Layer normalization
+│   │   ├── linear.py                # Matrix multiplication
+│   │   ├── attention.py             # Flash Attention (O(N) memory)
+│   │   ├── embedding.py             # Token + position embeddings
+│   │   └── fused_mlp.py             # Fused Linear→GELU→Linear
+│   │
+│   ├── utils/                       # 🛠️ Utilities
+│   │   ├── hf_loader.py             # HuggingFace weight loader
+│   │   └── benchmark.py             # Performance benchmarking
+│   │
+│   └── examples/                    # 📚 Educational Examples
+│       ├── linear_tile.py           # Matrix multiplication tutorial
+│       ├── attention_tile.py        # Attention tutorial
+│       ├── layernorm_tile.py        # LayerNorm tutorial
+│       └── gelu_tile.py             # GELU tutorial
+│
+├── scripts/                         # 🎮 Demo & Benchmark Scripts
+│   ├── compare_mingpt.py            # PyTorch minGPT comparison
+│   └── demo_hf_inference.py         # HuggingFace inference demo
 │
 ├── demo_tile_gpt.py                 # 🎮 Complete Demo
-│
-├── docs/                            # Documentation
-│   ├── TILE_PHILOSOPHY_DEMO.md      # Philosophy deep dive
-│   ├── ARCHITECTURE_VISION.md       # Project vision
-│   └── PROJECT_STRUCTURE.md         # Directory guide
-│
-├── profiling_results/               # Performance data & dashboard
+├── docs/                            # 📖 Documentation
+├── profiling_results/               # 📊 Performance data
 ├── mlir_research/                   # 🧪 Optional MLIR research
 └── external/                        # Git submodules (cutile-python, minGPT)
 ```
 
 **Start here**:
 - 🎮 [demo_tile_gpt.py](demo_tile_gpt.py) - Run the complete demo
-- 🎯 [cutile_gpt/README.md](cutile_gpt/README.md) - Implementation details & API reference
+- 🔧 [cutile_gpt/api/](cutile_gpt/api/) - High-level Tile API reference
+- 🧠 [cutile_gpt/models/](cutile_gpt/models/) - GPT model implementation
 - 📖 [docs/TILE_PHILOSOPHY_DEMO.md](docs/TILE_PHILOSOPHY_DEMO.md) - Philosophy deep dive
 - 📁 [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) - Complete directory guide
 
@@ -380,6 +442,34 @@ def layernorm_kernel(X, W, B, Y, eps, N):
 
 ---
 
+## 🏗️ Architecture Layers
+
+cutileGPT is organized into clean hierarchical layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     User Application                         │
+├─────────────────────────────────────────────────────────────┤
+│  models/        │ CutileGPT, GPTConfig                       │
+│                 │ High-level model with HuggingFace support  │
+├─────────────────────────────────────────────────────────────┤
+│  api/           │ tile().linear().gelu().execute()           │
+│                 │ Fluent Builder + DataAnalyzer              │
+├─────────────────────────────────────────────────────────────┤
+│  kernels/       │ cutile_gelu, cutile_linear, cutile_attn    │
+│                 │ Low-level CUDA Tile kernels                │
+├─────────────────────────────────────────────────────────────┤
+│  cuda.tile      │ NVIDIA's Tile Programming Framework        │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Choose your level**:
+- **High-level**: Use `CutileGPT` for complete models with HuggingFace weights
+- **Mid-level**: Use `tile()` API for custom declarative operations
+- **Low-level**: Use `cutile_*` kernels for maximum control
+
+---
+
 ## 🎓 What We've Proven
 
 cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
@@ -414,6 +504,10 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 - [x] PyTorch competitive performance
 - [x] Flash Attention (O(N) memory)
 - [x] Complete demo with all tests passing
+- [x] **Tile API** - Fluent Builder interface (`tile().linear().gelu().execute()`)
+- [x] **Data Profiler** - Auto-detection of optimal tile configurations
+- [x] **HuggingFace Integration** - Load pre-trained GPT-2 weights
+- [x] **Hierarchical Architecture** - Clean separation (api, models, kernels, utils)
 
 ### Future Work 🔮
 - [ ] FP16/BF16 support for 2-3x speedup
@@ -427,10 +521,12 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 ## 📚 Learn More
 
 - 🎮 **[demo_tile_gpt.py](demo_tile_gpt.py)** - Run the demo!
-- 🎯 **[cutile_gpt/README.md](cutile_gpt/README.md)** - API reference & implementation details
+- 🔧 **[cutile_gpt/api/](cutile_gpt/api/)** - Tile API reference (Fluent Builder, Config, Profiler)
+- 🧠 **[cutile_gpt/models/](cutile_gpt/models/)** - GPT model & config documentation
+- ⚡ **[cutile_gpt/kernels/](cutile_gpt/kernels/)** - Low-level kernel implementations
+- 📚 **[cutile_gpt/examples/](cutile_gpt/examples/)** - Educational tile programming tutorials
 - 📖 **[docs/TILE_PHILOSOPHY_DEMO.md](docs/TILE_PHILOSOPHY_DEMO.md)** - Complete philosophy documentation
 - 🏗️ **[docs/ARCHITECTURE_VISION.md](docs/ARCHITECTURE_VISION.md)** - Project vision & roadmap
-- 🔬 **[docs/CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md](docs/CUTILE_PYTHON_PHILOSOPHY_ANALYSIS.md)** - Deep analysis
 
 ---
 
