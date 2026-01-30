@@ -3,10 +3,19 @@
 HuggingFace Weight Loader
 
 Utilities for loading GPT-2 weights from HuggingFace transformers.
+
+Requires: pip install cutile-gpt[hf]
 """
 
 from typing import Dict, Tuple, Any
 import cupy as cp
+
+# Check for optional dependency
+try:
+    from transformers import GPT2LMHeadModel, GPT2Tokenizer
+    HAS_TRANSFORMERS = True
+except ImportError:
+    HAS_TRANSFORMERS = False
 
 
 class HFWeightLoader:
@@ -36,8 +45,15 @@ class HFWeightLoader:
 
         Returns:
             Tuple of (weights_dict, tokenizer)
+
+        Raises:
+            ImportError: If transformers is not installed
         """
-        from transformers import GPT2LMHeadModel, GPT2Tokenizer
+        if not HAS_TRANSFORMERS:
+            raise ImportError(
+                "HFWeightLoader requires 'transformers' package. "
+                "Install with: pip install cutile-gpt[hf]"
+            )
 
         print(f"Loading {self.model_name} from HuggingFace...")
 

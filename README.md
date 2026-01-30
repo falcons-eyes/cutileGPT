@@ -7,6 +7,7 @@ A complete GPT implementation proving **declarative GPU programming** works. Usi
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CUDA](https://img.shields.io/badge/CUDA-13.0%2B-76b900.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Python](https://img.shields.io/badge/Python-3.13%2B-3776ab.svg)](https://www.python.org/)
+[![PyPI](https://img.shields.io/pypi/v/cutile-gpt.svg)](https://pypi.org/project/cutile-gpt/)
 
 ---
 
@@ -165,7 +166,26 @@ The fundamental shift: specify **WHAT** (operations), let compiler handle **HOW*
 
 ## ⚡ Quick Start
 
-### Try the Demo
+### Option 1: Install from PyPI
+
+```bash
+pip install cutile-gpt[hf]
+```
+
+```python
+from cutile_gpt import CutileGPT, GPTConfig
+
+# Load GPT-2 from HuggingFace
+model = CutileGPT(GPTConfig.gpt2())
+model.load_from_huggingface('gpt2')
+
+# Generate text
+import cupy as cp
+tokens = cp.array([[15496, 11, 616, 1438, 318]], dtype=cp.int32)  # "Hello, my name is"
+generated = model.generate(tokens, max_new_tokens=20)
+```
+
+### Option 2: Clone and Run Demo
 
 ```bash
 # Clone and install
@@ -217,10 +237,29 @@ generated = model.generate(tokens, max_new_tokens=50)
 ### Prerequisites
 
 - **Python 3.13+**
-- **CUDA 13.0+**
+- **CUDA 12.x or 13.x**
 - **NVIDIA GPU** with compute capability 10.0+ (Hopper) or 12.0+ (Blackwell)
 
-### Install
+### Install from PyPI (Recommended)
+
+```bash
+# Core package only (minimal dependencies)
+pip install cutile-gpt
+
+# With HuggingFace support (transformers, datasets, tiktoken)
+pip install cutile-gpt[hf]
+
+# With PyTorch for benchmarking
+pip install cutile-gpt[torch]
+
+# With visualization tools (plotly, matplotlib, pandas)
+pip install cutile-gpt[viz]
+
+# Everything included
+pip install cutile-gpt[all]
+```
+
+### Install from Source (Development)
 
 ```bash
 # Clone with submodules
@@ -230,15 +269,31 @@ cd cutileGPT
 # Or if already cloned
 git submodule update --init --recursive
 
-# Install dependencies
+# Install with uv (recommended)
 uv sync
+
+# Or with pip
+pip install -e ".[all]"
 ```
+
+### Dependency Structure
+
+| Package | Dependencies | Use Case |
+|---------|--------------|----------|
+| `cutile-gpt` | cupy, numpy | Core kernels & Tile API |
+| `cutile-gpt[hf]` | + transformers, datasets, tiktoken | HuggingFace model loading |
+| `cutile-gpt[torch]` | + torch | PyTorch benchmarking |
+| `cutile-gpt[viz]` | + plotly, matplotlib, pandas | Visualization |
+| `cutile-gpt[all]` | All above | Full features |
 
 ---
 
 ## 💻 Usage
 
-### Individual Kernels
+> **Note**: Core features (kernels, Tile API) work with `pip install cutile-gpt`.
+> HuggingFace loading requires `pip install cutile-gpt[hf]`.
+
+### Individual Kernels (Core)
 
 ```python
 import cupy as cp
@@ -289,12 +344,13 @@ print(f"Recommended config: {profile.recommended_config}")
 
 ```python
 from cutile_gpt import CutileGPT, GPTConfig
+import cupy as cp
 
-# Custom config
+# Custom config (Core - no extra dependencies)
 config = GPTConfig(n_layer=6, n_head=4, n_embd=256)
 model = CutileGPT(config)
 
-# Or use presets: gpt_nano, gpt2, gpt2_medium, gpt2_large, gpt2_xl
+# Or use presets and load from HuggingFace (requires: pip install cutile-gpt[hf])
 model = CutileGPT(GPTConfig.gpt2())
 model.load_from_huggingface('gpt2')
 
@@ -314,11 +370,65 @@ generated = model.generate(
 ### Benchmark Against PyTorch
 
 ```bash
-# Compare with PyTorch minGPT
+# Compare with PyTorch minGPT (requires: pip install cutile-gpt[torch])
 uv run python scripts/compare_mingpt.py --benchmark --model tile-medium --batch-size 8 --seq-len 128
 
-# Run HuggingFace inference demo
+# Run HuggingFace inference demo (requires: pip install cutile-gpt[hf])
 uv run python scripts/demo_hf_inference.py
+```
+
+---
+
+## 📖 API Reference
+
+### Core Exports (always available)
+
+```python
+from cutile_gpt import (
+    # Low-level Kernels
+    cutile_gelu,              # GELU activation (8.3x faster)
+    cutile_layer_norm,        # Layer normalization
+    cutile_linear,            # Matrix multiplication
+    cutile_linear_bias,       # Linear with bias
+    cutile_embedding,         # Token + position embedding
+    cutile_causal_attention,  # Flash Attention
+    cutile_fused_mlp,         # Fused Linear→GELU→Linear
+
+    # Tile API (Fluent Builder)
+    tile,                     # Create TileOp from tensor
+    configure_tiles,          # Set global tile config
+    TileConfig,               # Tile size configuration
+    TileOp,                   # Fluent operation builder
+
+    # Data Profiling
+    DataAnalyzer,             # Auto-detect optimal config
+    DataProfile,              # Profile result
+
+    # Model (Core)
+    CutileGPT,                # GPT model class
+    GPTConfig,                # Model configuration
+)
+```
+
+### Optional Exports
+
+```python
+# Requires: pip install cutile-gpt[hf]
+from cutile_gpt import HFWeightLoader  # Load HuggingFace weights
+model.load_from_huggingface('gpt2')    # CutileGPT method
+
+# Requires: pip install cutile-gpt[torch]
+from cutile_gpt import benchmark_torch  # PyTorch benchmarking
+```
+
+### GPTConfig Presets
+
+```python
+GPTConfig.gpt_nano()      # 3 layers, 48 dims (testing)
+GPTConfig.gpt2()          # 12 layers, 768 dims (117M params)
+GPTConfig.gpt2_medium()   # 24 layers, 1024 dims (345M params)
+GPTConfig.gpt2_large()    # 36 layers, 1280 dims (774M params)
+GPTConfig.gpt2_xl()       # 48 layers, 1600 dims (1.5B params)
 ```
 
 ---

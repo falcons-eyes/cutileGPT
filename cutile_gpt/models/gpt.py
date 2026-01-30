@@ -234,8 +234,17 @@ class CutileGPT:
 
         Args:
             model_name: HuggingFace model name (e.g., 'gpt2', 'gpt2-medium')
+
+        Raises:
+            ImportError: If transformers is not installed
         """
-        from transformers import GPT2LMHeadModel
+        try:
+            from transformers import GPT2LMHeadModel
+        except ImportError:
+            raise ImportError(
+                "load_from_huggingface requires 'transformers' package. "
+                "Install with: pip install cutile-gpt[hf]"
+            )
 
         hf_model = GPT2LMHeadModel.from_pretrained(model_name)
         sd = hf_model.state_dict()
