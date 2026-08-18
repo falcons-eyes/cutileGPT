@@ -54,6 +54,8 @@ from .api import (
 )
 from .kernels import (
     KVCache,
+    LinearTileConfig,
+    autotune_linear,
     cutile_causal_attention,
     cutile_embedding,
     cutile_fused_mlp,
@@ -61,8 +63,12 @@ from .kernels import (
     cutile_layer_norm,
     cutile_linear,
     cutile_linear_bias,
+    cutile_linear_residual,
+    cutile_qk_norm_rope,
+    cutile_qk_norm_rope_cached,
     cutile_rms_norm,
     cutile_rope,
+    cutile_rope_qk,
     cutile_swiglu_mlp,
     rope_tables,
 )
@@ -71,6 +77,21 @@ from .kernels import (
 # Optional: Models (requires transformers for HF loading)
 # =============================================================================
 from .models import CutileGPT, GPTConfig
+from .planner import (
+    Backend,
+    ExecutionPhase,
+    KernelCandidate,
+    KernelRegistry,
+    RegionCost,
+    RegionKind,
+    TacticCache,
+    TacticSelection,
+    TensorContract,
+    TileRegion,
+    length_bucket,
+)
+from .regions import CandidateMeasurement, PlannedRegion, TileRuntime, TuningResult
+from .runtime import CUDAGraphForward, capture_forward
 
 # =============================================================================
 # Optional: Utils (some require torch/transformers)
@@ -105,11 +126,30 @@ def __getattr__(name):
 
 __all__ = [
     'KVCache',
+    'LinearTileConfig',
+    'autotune_linear',
     # Version
     '__version__',
     # Models
     'CutileGPT',
     'GPTConfig',
+    'CUDAGraphForward',
+    'capture_forward',
+    'Backend',
+    'ExecutionPhase',
+    'KernelCandidate',
+    'KernelRegistry',
+    'RegionKind',
+    'RegionCost',
+    'TacticCache',
+    'TacticSelection',
+    'TensorContract',
+    'TileRegion',
+    'length_bucket',
+    'PlannedRegion',
+    'CandidateMeasurement',
+    'TuningResult',
+    'TileRuntime',
     # Tile API
     'TileOp',
     'TileConfig',
@@ -125,11 +165,15 @@ __all__ = [
     'cutile_embedding',
     'cutile_linear',
     'cutile_linear_bias',
+    'cutile_linear_residual',
+    'cutile_qk_norm_rope',
+    'cutile_qk_norm_rope_cached',
     'cutile_layer_norm',
     'cutile_causal_attention',
     'cutile_fused_mlp',
     'cutile_rms_norm',
     'cutile_rope',
+    'cutile_rope_qk',
     'rope_tables',
     'cutile_swiglu_mlp',
     # Utils

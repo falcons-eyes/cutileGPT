@@ -263,7 +263,7 @@ All kernels in this implementation follow these principles:
 ## 🔗 References
 
 - [demo_tile_gpt.py](../demo_tile_gpt.py) - Complete executable demo
-- [TILE_PHILOSOPHY_DEMO.md](../docs/TILE_PHILOSOPHY_DEMO.md) - Philosophy documentation
+- [Project README](../README.md) - Architecture, benchmarks, and quick start
 - [NVIDIA CUDA Tile Docs](https://docs.nvidia.com/cuda/tile-ir/)
 
 ---

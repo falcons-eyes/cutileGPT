@@ -6,7 +6,7 @@ readme = "README.md"
 license = {text = "Apache-2.0"}
 requires-python = ">=3.13"
 authors = [
-    {name = "Hwoo Joo", email = "ceo@falconoon.com"}
+    {name = "Hwoo Joo"}
 ]
 keywords = [
     "cuda",

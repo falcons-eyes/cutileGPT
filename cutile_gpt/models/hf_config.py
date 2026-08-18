@@ -12,8 +12,9 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Architectures this can express: dense, gated MLP, RoPE, RMSNorm, GQA.
-GATED_ACTIVATIONS = {"silu", "swish", "silu_and_mul", "geglu", "gelu_pytorch_tanh"}
+# The current fused gated MLP implements SiLU(gate) * up. GeGLU is also gated,
+# but accepting it here would silently execute the wrong activation.
+SUPPORTED_GATED_ACTIVATIONS = {"silu", "swish", "silu_and_mul"}
 
 
 class UnsupportedArchitecture(Exception):
@@ -121,9 +122,9 @@ def parse_config(config: dict | str | Path) -> ModelArchitecture:
 
     act = (t.get("hidden_act") or t.get("hidden_activation")
            or t.get("mlp_hidden_act") or "").lower()
-    if act not in GATED_ACTIVATIONS:
+    if act not in SUPPORTED_GATED_ACTIVATIONS:
         raise UnsupportedArchitecture(
-            f"activation {act!r} is not a gated MLP; only SwiGLU/GeGLU is implemented"
+            f"activation {act!r} is not implemented; only SwiGLU is supported"
         )
 
     n_layer = _require(t, "num_hidden_layers")

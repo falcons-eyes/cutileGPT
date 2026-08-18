@@ -24,6 +24,7 @@ import cupy as cp
 import numpy as np
 
 ConstInt = ct.Constant[int]
+ConstBool = ct.Constant[bool]
 PAD_ZERO = ct.PaddingMode.ZERO
 
 
@@ -77,6 +78,148 @@ def rope_kernel(X, Cos, Sin, Out, N_HEAD: ConstInt, TILE_M: ConstInt,
              tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(Out.dtype))
     ct.store(Out, index=(batch_idx, head_idx, bid_m, 1, 0),
              tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(Out.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def rope_qk_kernel(
+    Q,
+    K,
+    Cos,
+    Sin,
+    QOut,
+    KOut,
+    N_HEAD: ConstInt,
+    N_KV_HEAD: ConstInt,
+    TILE_M: ConstInt,
+    TILE_D: ConstInt,
+):
+    """Rotate Q and K in one launch, including unequal GQA head counts."""
+    bid_m = ct.bid(0)
+    bid = ct.bid(1)
+    q_blocks = Q.shape[0] * N_HEAD
+
+    if bid < q_blocks:
+        batch_idx = bid // N_HEAD
+        head_idx = bid % N_HEAD
+        x1 = ct.load(Q, index=(batch_idx, head_idx, bid_m, 0, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        x2 = ct.load(Q, index=(batch_idx, head_idx, bid_m, 1, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+    else:
+        k_bid = bid - q_blocks
+        batch_idx = k_bid // N_KV_HEAD
+        head_idx = k_bid % N_KV_HEAD
+        x1 = ct.load(K, index=(batch_idx, head_idx, bid_m, 0, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        x2 = ct.load(K, index=(batch_idx, head_idx, bid_m, 1, 0),
+                     shape=(1, 1,TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+
+    cos = ct.load(Cos, index=(bid_m, 0), shape=(TILE_M, TILE_D),
+                  padding_mode=PAD_ZERO, latency=2)
+    sin = ct.load(Sin, index=(bid_m, 0), shape=(TILE_M, TILE_D),
+                  padding_mode=PAD_ZERO, latency=2)
+    x1f = x1.astype(np.float32)
+    x2f = x2.astype(np.float32)
+    out1 = x1f * cos - x2f * sin
+    out2 = x2f * cos + x1f * sin
+
+    if bid < q_blocks:
+        ct.store(QOut, index=(batch_idx, head_idx, bid_m, 0, 0),
+                 tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(QOut.dtype))
+        ct.store(QOut, index=(batch_idx, head_idx, bid_m, 1, 0),
+                 tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(QOut.dtype))
+    else:
+        ct.store(KOut, index=(batch_idx, head_idx, bid_m, 0, 0),
+                 tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(KOut.dtype))
+        ct.store(KOut, index=(batch_idx, head_idx, bid_m, 1, 0),
+                 tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(KOut.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def qk_norm_rope_kernel(
+    Q, K, QNorm, KNorm, V, QWeight, KWeight, Cos, Sin, QOut, KOut, VOut, eps,
+    N_HEAD: ConstInt, N_KV_HEAD: ConstInt, HEAD_DIM: ConstInt,
+    TILE_M: ConstInt, TILE_D: ConstInt, WRITE_V: ConstBool,
+):
+    """Apply per-head RMSNorm and RoPE to Q and K in one launch."""
+    bid_m = ct.bid(0)
+    bid = ct.bid(1)
+    q_blocks = Q.shape[0] * N_HEAD
+
+    if bid < q_blocks:
+        batch_idx = bid // N_HEAD
+        head_idx = bid % N_HEAD
+        x1 = ct.load(Q, index=(batch_idx, head_idx, bid_m, 0, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        x2 = ct.load(Q, index=(batch_idx, head_idx, bid_m, 1, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        norm_x = ct.load(QNorm, index=(batch_idx, head_idx, bid_m, 0),
+                         shape=(1, 1, TILE_M, 2 * TILE_D),
+                         padding_mode=PAD_ZERO, latency=4).reshape(
+                             (TILE_M, 2 * TILE_D)
+                         )
+        w1 = ct.load(QWeight, index=(0, 0), shape=(1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=2)
+        w2 = ct.load(QWeight, index=(1, 0), shape=(1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=2)
+    else:
+        k_bid = bid - q_blocks
+        batch_idx = k_bid // N_KV_HEAD
+        head_idx = k_bid % N_KV_HEAD
+        x1 = ct.load(K, index=(batch_idx, head_idx, bid_m, 0, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        x2 = ct.load(K, index=(batch_idx, head_idx, bid_m, 1, 0),
+                     shape=(1, 1, TILE_M, 1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+        norm_x = ct.load(KNorm, index=(batch_idx, head_idx, bid_m, 0),
+                         shape=(1, 1, TILE_M, 2 * TILE_D),
+                         padding_mode=PAD_ZERO, latency=4).reshape(
+                             (TILE_M, 2 * TILE_D)
+                         )
+        w1 = ct.load(KWeight, index=(0, 0), shape=(1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=2)
+        w2 = ct.load(KWeight, index=(1, 0), shape=(1, TILE_D),
+                     padding_mode=PAD_ZERO, latency=2)
+
+    norm_sq = (norm_x * norm_x).astype(np.float32)
+    mean_sq = ct.sum(norm_sq, axis=1, keepdims=True) / HEAD_DIM
+    rstd = 1.0 / ct.sqrt(mean_sq + eps)
+    # Preserve the unfused/Hugging Face dtype boundary. RMSNorm returns the
+    # checkpoint storage dtype before RoPE promotes it back to fp32. Keeping
+    # this cast in registers removes the materialization without subtly
+    # changing bf16 model arithmetic.
+    x1n = (x1 * rstd * w1).astype(Q.dtype).astype(np.float32)
+    x2n = (x2 * rstd * w2).astype(Q.dtype).astype(np.float32)
+    cos = ct.load(Cos, index=(bid_m, 0), shape=(TILE_M, TILE_D),
+                  padding_mode=PAD_ZERO, latency=2)
+    sin = ct.load(Sin, index=(bid_m, 0), shape=(TILE_M, TILE_D),
+                  padding_mode=PAD_ZERO, latency=2)
+    out1 = x1n * cos - x2n * sin
+    out2 = x2n * cos + x1n * sin
+
+    if bid < q_blocks:
+        ct.store(QOut, index=(batch_idx, head_idx, bid_m, 0, 0),
+                 tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(QOut.dtype))
+        ct.store(QOut, index=(batch_idx, head_idx, bid_m, 1, 0),
+                 tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(QOut.dtype))
+    else:
+        ct.store(KOut, index=(batch_idx, head_idx, bid_m, 0, 0),
+                 tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(KOut.dtype))
+        ct.store(KOut, index=(batch_idx, head_idx, bid_m, 1, 0),
+                 tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(KOut.dtype))
+        if WRITE_V:
+            value = ct.load(V, index=(batch_idx, head_idx, bid_m, 0),
+                            shape=(1, 1, TILE_M, HEAD_DIM),
+                            padding_mode=PAD_ZERO, latency=4)
+            ct.store(VOut, index=(batch_idx, head_idx, bid_m, 0),
+                     tile=value.astype(VOut.dtype))
 
 
 def llama3_scale(inv_freq: cp.ndarray, factor: float, low_freq_factor: float,
@@ -213,6 +356,151 @@ def cutile_rope(
               rope_kernel, (x_split, cos, sin, out_split, n_head, tile_m, tile_d))
 
     return out
+
+
+def cutile_rope_qk(
+    q: cp.ndarray,
+    k: cp.ndarray,
+    cos: cp.ndarray,
+    sin: cp.ndarray,
+) -> tuple[cp.ndarray, cp.ndarray]:
+    """Apply the same RoPE tables to Q and K in a single kernel launch."""
+    if q.ndim != 4 or k.ndim != 4:
+        raise ValueError("Q and K must have shape (batch, n_head, seq, head_dim)")
+    batch, n_head, seq_len, head_dim = q.shape
+    if k.shape[0] != batch or k.shape[2:] != (seq_len, head_dim):
+        raise ValueError(f"Q and K shapes are incompatible: {q.shape} and {k.shape}")
+    n_kv_head = k.shape[1]
+    half = head_dim // 2
+    if head_dim % 2 != 0:
+        raise ValueError(f"head_dim must be even, got {head_dim}")
+    if cos.shape != (seq_len, half) or sin.shape != (seq_len, half):
+        raise ValueError(
+            f"cos/sin must be ({seq_len}, {half}), got {cos.shape} and {sin.shape}"
+        )
+
+    q_out = cp.empty(q.shape, dtype=q.dtype)
+    k_out = cp.empty(k.shape, dtype=k.dtype)
+    tile_m = 64
+    tile_d = 1 << (half - 1).bit_length()
+    grid_m = (seq_len + tile_m - 1) // tile_m
+    q_split = q.reshape(batch, n_head, seq_len, 2, half)
+    k_split = k.reshape(batch, n_kv_head, seq_len, 2, half)
+    q_out_split = q_out.reshape(batch, n_head, seq_len, 2, half)
+    k_out_split = k_out.reshape(batch, n_kv_head, seq_len, 2, half)
+    ct.launch(
+        cp.cuda.get_current_stream(),
+        (grid_m, batch * (n_head + n_kv_head), 1),
+        rope_qk_kernel,
+        (q_split, k_split, cos, sin, q_out_split, k_out_split,
+         n_head, n_kv_head, tile_m, tile_d),
+    )
+    return q_out, k_out
+
+
+def cutile_qk_norm_rope(
+    q: cp.ndarray,
+    k: cp.ndarray,
+    q_weight: cp.ndarray,
+    k_weight: cp.ndarray,
+    cos: cp.ndarray,
+    sin: cp.ndarray,
+    eps: float = 1e-6,
+) -> tuple[cp.ndarray, cp.ndarray]:
+    """Fuse QK-Norm and RoPE while preserving their checkpoint order."""
+    if q.ndim != 4 or k.ndim != 4:
+        raise ValueError("Q and K must have shape (batch, n_head, seq, head_dim)")
+    batch, n_head, seq_len, head_dim = q.shape
+    if k.shape[0] != batch or k.shape[2:] != (seq_len, head_dim):
+        raise ValueError(f"Q and K shapes are incompatible: {q.shape} and {k.shape}")
+    if head_dim % 2 != 0:
+        raise ValueError(f"head_dim must be even, got {head_dim}")
+    if q_weight.shape != (head_dim,) or k_weight.shape != (head_dim,):
+        raise ValueError(
+            f"Q/K norm weights must both be ({head_dim},), got "
+            f"{q_weight.shape} and {k_weight.shape}"
+        )
+
+    n_kv_head = k.shape[1]
+    half = head_dim // 2
+    if cos.shape != (seq_len, half) or sin.shape != (seq_len, half):
+        raise ValueError(
+            f"cos/sin must be ({seq_len}, {half}), got {cos.shape} and {sin.shape}"
+        )
+    if not q.flags.c_contiguous:
+        q = cp.ascontiguousarray(q)
+    if not k.flags.c_contiguous:
+        k = cp.ascontiguousarray(k)
+
+    q_out = cp.empty_like(q)
+    k_out = cp.empty_like(k)
+    tile_m = min(64, 1 << (seq_len - 1).bit_length())
+    tile_d = 1 << (half - 1).bit_length()
+    grid_m = (seq_len + tile_m - 1) // tile_m
+    q_split = q.reshape(batch, n_head, seq_len, 2, half)
+    k_split = k.reshape(batch, n_kv_head, seq_len, 2, half)
+    q_out_split = q_out.reshape(batch, n_head, seq_len, 2, half)
+    k_out_split = k_out.reshape(batch, n_kv_head, seq_len, 2, half)
+    ct.launch(
+        cp.cuda.get_current_stream(),
+        (grid_m, batch * (n_head + n_kv_head), 1),
+        qk_norm_rope_kernel,
+        (q_split, k_split, q, k, k, q_weight.reshape(2, half),
+         k_weight.reshape(2, half), cos, sin, q_out_split, k_out_split, k,
+         eps, n_head, n_kv_head, head_dim, tile_m, tile_d, False),
+    )
+    return q_out, k_out
+
+
+def cutile_qk_norm_rope_cached(
+    q: cp.ndarray,
+    k: cp.ndarray,
+    v: cp.ndarray,
+    q_weight: cp.ndarray,
+    k_weight: cp.ndarray,
+    cos: cp.ndarray,
+    sin: cp.ndarray,
+    k_slot: cp.ndarray,
+    v_slot: cp.ndarray,
+    eps: float = 1e-6,
+) -> cp.ndarray:
+    """Fuse QK-Norm, RoPE, and the current K/V cache writes."""
+    if q.ndim != 4 or k.ndim != 4 or v.shape != k.shape:
+        raise ValueError("Q/K/V must be BHSD arrays and K/V shapes must match")
+    batch, n_head, seq_len, head_dim = q.shape
+    n_kv_head = k.shape[1]
+    if k.shape != (batch, n_kv_head, seq_len, head_dim):
+        raise ValueError(f"Q and K shapes are incompatible: {q.shape} and {k.shape}")
+    if k_slot.shape != k.shape or v_slot.shape != v.shape:
+        raise ValueError(
+            f"cache slots must match K/V {k.shape}, got {k_slot.shape}/{v_slot.shape}"
+        )
+    if head_dim % 2 != 0:
+        raise ValueError(f"head_dim must be even, got {head_dim}")
+    half = head_dim // 2
+    if q_weight.shape != (head_dim,) or k_weight.shape != (head_dim,):
+        raise ValueError("Q/K norm weight sizes must equal head_dim")
+    if cos.shape != (seq_len, half) or sin.shape != (seq_len, half):
+        raise ValueError(f"cos/sin must be ({seq_len}, {half})")
+    q = cp.ascontiguousarray(q)
+    k = cp.ascontiguousarray(k)
+    v = cp.ascontiguousarray(v)
+    q_out = cp.empty_like(q)
+    tile_m = min(64, 1 << (seq_len - 1).bit_length())
+    tile_d = 1 << (half - 1).bit_length()
+    grid_m = (seq_len + tile_m - 1) // tile_m
+    ct.launch(
+        cp.cuda.get_current_stream(),
+        (grid_m, batch * (n_head + n_kv_head), 1),
+        qk_norm_rope_kernel,
+        (q.reshape(batch, n_head, seq_len, 2, half),
+         k.reshape(batch, n_kv_head, seq_len, 2, half), q, k, v,
+         q_weight.reshape(2, half), k_weight.reshape(2, half), cos, sin,
+         q_out.reshape(batch, n_head, seq_len, 2, half),
+         k_slot.reshape(batch, n_kv_head, seq_len, 2, half), v_slot, eps,
+         n_head, n_kv_head, head_dim, tile_m, tile_d, True),
+    )
+    return q_out
 
 
 def cupy_rope(x: cp.ndarray, cos: cp.ndarray, sin: cp.ndarray) -> cp.ndarray:

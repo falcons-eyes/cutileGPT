@@ -1,10 +1,10 @@
 <h1 align="center">cutileGPT</h1>
 
-<p align="center"><strong>Modern transformer inference, expressed in tiles.</strong></p>
+<p align="center"><strong>A tile-native inference lab for modern decoder LLMs.</strong></p>
 
 <p align="center">
-  Readable kernels for dense decoder-only LLMs, built with
-  <a href="https://github.com/NVIDIA/cutile-python">NVIDIA cuTile Python</a>.
+  Graph-aware execution planning above readable
+  <a href="https://github.com/NVIDIA/cutile-python">NVIDIA cuTile Python</a> kernels.
 </p>
 
 <p align="center">
@@ -16,35 +16,38 @@
 </p>
 
 <p align="center">
-  <a href="#why-cutilegpt">Why cutileGPT</a> ·
+  <a href="#why-tiles">Why tiles</a> ·
   <a href="#benchmarks">Benchmarks</a> ·
   <a href="#quick-start">Quick start</a> ·
-  <a href="#model-support">Model support</a>
+  <a href="#execution-planner">Planner</a>
 </p>
 
 ---
 
-cutileGPT is a compact inference implementation for studying how modern
-transformers map onto tile-native GPU kernels. The model stays in Python; the
-cuTile compiler handles thread mapping, memory movement, and synchronization.
-
-| **7.95x** | **1.011x** | **6 verified / 12 loadable** |
+| **1.80×** | **≈ parity** | **35% fewer launches** |
 |:---:|:---:|:---:|
-| GELU vs CuPy | best end-to-end ratio vs PyTorch | open-weight checkpoints |
+| decode vs PyTorch eager | decode vs `torch.compile` | Qwen3 decode · 350 → 227 |
 
-> [!NOTE]
-> This is an experimental, single-GPU inference project—not a training or
-> distributed serving framework.
+cutileGPT explores a focused question: **how much framework and kernel-boundary
+overhead can tile-native kernels remove without dropping to thread-level CUDA?**
 
-## Why cutileGPT
+It combines model-graph decisions—fusion, aliasing, prefill/decode specialization,
+and backend selection—with cuTile kernels that leave vectorization, register
+allocation, shared-memory layout, bank-conflict handling, and hardware scheduling
+to the compiler.
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/tile-pipeline-dark.svg">
-  <img src="docs/assets/readme/tile-pipeline-light.svg" alt="cutileGPT pipeline from Hugging Face checkpoint through TransformerLM and cuTile kernels to an NVIDIA GPU" width="100%">
-</picture>
+> [!IMPORTANT]
+> This is an experimental, single-GPU inference project. It is not a training or
+> distributed-serving framework.
 
-Most CUDA implementations describe *how* threads cooperate. cuTile kernels
-describe *what* a tile computes:
+<p align="center">
+  <img src="docs/assets/readme/tile-programming.gif" alt="Tile programming animation: a programmer specifies tiles while the compiler maps them to GPU execution" width="100%">
+</p>
+
+## Why tiles
+
+CUDA kernels usually expose how individual threads cooperate. cuTile kernels
+describe what a tile computes:
 
 ```python
 @ct.kernel
@@ -58,72 +61,61 @@ def rms_norm_kernel(X, W, Y, eps, N: ConstInt, TILE_N: ConstInt):
 
 <sub>Shortened for clarity. See the full [RMSNorm kernel](cutile_gpt/kernels/rmsnorm.py).</sub>
 
-That same style covers the primitives used by current dense decoder models:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/tile-pipeline-dark.svg">
+  <img src="docs/assets/readme/tile-pipeline-light.svg" alt="A Hugging Face checkpoint flows through a graph-aware planner and cuTile kernels to an NVIDIA GPU" width="100%">
+</picture>
 
-| Model primitive | cutileGPT implementation |
-|---|---|
-| RMSNorm | fp32 accumulation, Gemma unit-offset support |
-| RoPE | Hugging Face layout, Llama 3 scaling, cached offsets |
-| MHA / GQA | online softmax with shared KV heads |
-| Sliding-window attention | skips KV tiles outside the window |
-| SwiGLU | fused gated MLP path |
-| Autoregressive decoding | per-layer KV cache |
-| Checkpoint loading | `config.json` + safetensors, bf16 preserved through DLPack |
+The current runtime includes:
 
-The loader is intentionally strict. If a checkpoint asks for arithmetic the
-kernels do not implement, it raises an error instead of producing plausible but
-incorrect tokens.
+- RMSNorm, RoPE, MHA/GQA, sliding-window attention, and SwiGLU
+- packed QKV and gate/up projections
+- fused QK-Norm + RoPE + KV-cache writes
+- fused down-projection + residual epilogues
+- zero-copy KV-cache views and decode-specialized query tiles
+- fixed-shape CUDA Graph capture for static inference
+- strict Hugging Face `config.json` + safetensors loading
+
+Fusion is selective. A staged fused MLP is **1.23× faster** than its separate
+path, while an earlier mega-kernel duplicated matmul work and was **166× slower**.
+The rule is simple: fuse to remove launches or materialization, never to repeat
+expensive computation.
 
 ## Benchmarks
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/readme/benchmark-overview-dark.svg">
-  <img src="docs/assets/readme/benchmark-overview-light.svg" alt="Heatmaps of PyTorch latency divided by cutileGPT latency across 36 model, batch, and sequence configurations" width="100%">
-</picture>
+`Qwen/Qwen3-0.6B`, bf16, batch 1, NVIDIA GB10. Times are milliseconds; lower is
+better. Prefill uses a fixed-shape CUDA Graph. Decode advances the real KV cache.
 
-### End-to-end forward pass
-
-Representative results from the checked-in 36-configuration benchmark on an
-**NVIDIA GB10**. Ratio is `PyTorch latency / cutileGPT latency`; higher is
-better for cutileGPT.
-
-| Model | Batch × sequence | PyTorch | cutileGPT | Ratio |
+| Phase | Tokens / context | PyTorch eager | `torch.compile` | cutileGPT |
 |---|---:|---:|---:|---:|
-| Nano · 3L / 48d | 1 × 64 | **0.65 ms** | 0.99 ms | 0.664x |
-| Nano · 3L / 48d | 8 × 256 | 4.92 ms | **4.86 ms** | **1.011x** |
-| Small · 6L / 384d | 16 × 256 | **69.90 ms** | 71.97 ms | 0.971x |
-| Medium · 8L / 512d | 16 × 256 | **111.04 ms** | 113.61 ms | 0.977x |
+| Prefill | 128 | 12.84 | **8.10** | 8.57 |
+| Prefill | 512 | 24.86 | **15.13** | 15.71 |
+| Decode | 128 | 11.72 | 6.75 | **6.50** |
+| Decode | 512 | 12.21 | 7.40 | **7.18** |
 
-Small workloads favor PyTorch because launch overhead dominates. As batch and
-sequence length grow, the checked-in results approach parity. These numbers are
-from one GPU and should be treated as a reproducible baseline, not a universal
-hardware claim.
-
-### Kernel microbenchmark
-
-| Kernel | Shape / dtype | Reference | cuTile | Speedup |
-|---|---|---:|---:|---:|
-| GELU | `32 × 512 × 768`, fp32 | CuPy · 4.314 ms | **0.543 ms** | **7.95x** |
+The honest result: cutileGPT is clearly faster than eager PyTorch, while the
+optimized comparison is close—4–6% behind on prefill and 3–4% ahead on these
+decode measurements. Treat small gaps as shape- and system-dependent, not as a
+universal win.
 
 <details>
-<summary><strong>Methodology, raw data, and all 36 configurations</strong></summary>
+<summary><strong>Methodology and reproduction</strong></summary>
 
-The end-to-end benchmark compares the same minGPT weights and inputs, with 5
-warm-up passes and 30 synchronized timed passes per configuration. It covers 3
-model sizes, 4 batch sizes, and 3 sequence lengths. The GELU microbenchmark
-uses 3 warm-up passes and 10 timed passes.
+CUDA events exclude model loading and compilation. PyTorch uses
+`max-autotune-no-cudagraphs`, preserving Inductor fusion and tuning while avoiding
+an internal graph capture that conflicts with the advancing KV cache. Nsight
+Systems launch counts use one warmed-up decode step.
 
-- [Raw results · JSON](docs/assets/comprehensive_comparison.json)
-- [Raw results · CSV](docs/assets/comprehensive_comparison.csv)
-- [Full Markdown table](docs/assets/comparison_table.md)
-- [Benchmark script](scripts/comprehensive_comparison.py)
-- [README visual generator](scripts/create_readme_visuals.py)
-
-Reproduce the full comparison from a source checkout:
+- [Raw results](docs/assets/qwen3-0.6b-gb10.json)
+- [Benchmark](scripts/benchmark_transformer.py)
+- [Correctness verifier](scripts/verify_model.py)
 
 ```bash
-uv run python scripts/comprehensive_comparison.py
-uv run python scripts/create_readme_visuals.py
+uv run python scripts/verify_model.py Qwen/Qwen3-0.6B
+uv run python scripts/benchmark_transformer.py Qwen/Qwen3-0.6B \
+  --prefill 128,512 --decode 128,512,2048 --pytorch
+uv run python scripts/benchmark_transformer.py Qwen/Qwen3-0.6B \
+  --prefill 128,512 --decode 128,512 --pytorch --torch-compile
 ```
 
 </details>
@@ -135,23 +127,16 @@ uv run python scripts/create_readme_visuals.py
 - Python 3.13+
 - NVIDIA driver r580+
 - CUDA Toolkit 13.1+
-- A GPU supported by the installed `tileiras` compiler
+- a GPU supported by the installed `tileiras` compiler
 
-The project is developed and benchmarked on Blackwell GB10. GPU support changes
-with cuTile releases, so check the
-[upstream system requirements](https://github.com/NVIDIA/cutile-python#system-requirements)
-before installing on another architecture.
+Check the [upstream system requirements](https://github.com/NVIDIA/cutile-python#system-requirements)
+for current GPU support.
 
-### Install
+### Install and run
 
 ```bash
 pip install "cutile-gpt[hf,torch]"
 ```
-
-The base package is enough for direct kernel use. The `hf` and `torch` extras
-are used below to download and load safetensors checkpoints.
-
-### Run a Hugging Face checkpoint
 
 ```python
 import cupy as cp
@@ -162,66 +147,57 @@ from cutile_gpt.models.transformer import TransformerLM
 
 model_id = "Qwen/Qwen3-0.6B"
 path = snapshot_download(model_id)
-
 tokenizer = AutoTokenizer.from_pretrained(path)
 model = TransformerLM.from_pretrained(path)
 
-prompt = "The future of GPU programming is"
-token_ids = tokenizer(prompt, return_tensors="np").input_ids
-token_ids = cp.asarray(token_ids, dtype=cp.int32)
-
-logits = model.forward(token_ids)
+tokens = tokenizer("The future of GPU programming is", return_tensors="np").input_ids
+logits = model.forward(cp.asarray(tokens, dtype=cp.int32))
 next_id = int(cp.argmax(logits[0, -1]).get())
 print(tokenizer.decode([next_id]))
 ```
 
-`TransformerLM` reads the checkpoint configuration instead of hardcoding a
-single architecture. Weights remain in their source dtype, including bf16.
-
-### Use the kernels directly
-
-```python
-import cupy as cp
-from cutile_gpt import cutile_rms_norm
-
-x = cp.random.standard_normal((8, 128, 1024), dtype=cp.float32)
-weight = cp.ones(1024, dtype=cp.float32)
-y = cutile_rms_norm(x, weight, eps=1e-6)
-```
-
-### Install from source
+For a source checkout:
 
 ```bash
 git clone --recursive https://github.com/falcons-eyes/cutileGPT.git
 cd cutileGPT
 uv sync --all-extras
-
-# Compare a real checkpoint against transformers.
 uv run python scripts/verify_model.py Qwen/Qwen3-0.6B
+```
+
+## Execution planner
+
+cutileGPT does not position cuTile against `torch.compile`. They solve different
+layers of the stack:
+
+```text
+model graph   fusion · aliasing · execution phase · backend choice
+                         ↓ TileRegion contract
+tile compiler tile shape · vectorization · registers · shared memory · scheduling
+```
+
+`TileRegion` describes semantic boundaries without prescribing CUDA threads. A
+kernel registry measures numerically valid candidates and caches the best tactic
+by GPU, dtype, shape, and phase.
+
+```bash
+uv run python scripts/autotune_regions.py Qwen/Qwen3-0.6B \
+  --prefill 128 --decode 128 --cache .cutile-gpt-tactics.json
+
+uv run python scripts/benchmark_transformer.py Qwen/Qwen3-0.6B \
+  --prefill 128 --decode 512 --show-plan \
+  --tactic-cache .cutile-gpt-tactics.json
 ```
 
 ## Model support
 
-The current loader targets **dense, decoder-only, RoPE + RMSNorm + gated-MLP**
-architectures.
+The loader targets dense, decoder-only, RoPE + RMSNorm + gated-MLP models. It has
+been verified against Qwen3, Qwen2.5, Phi-3, Llama 3.2, and SmolLM2 checkpoints.
+See the [compatibility matrix](docs/MODELS.md) for exact checkpoints and known
+limitations.
 
-| Family | Verified checkpoint | Result |
-|---|---|---|
-| Qwen3 | `Qwen/Qwen3-0.6B` | bf16 argmax agreement + generation |
-| Qwen3 | `Qwen/Qwen3-Reranker-0.6B` | bf16 argmax agreement |
-| Qwen2 | `Qwen/Qwen2.5-0.5B-Instruct` | bf16 argmax agreement; QKV bias path |
-| Phi | `microsoft/Phi-3-mini-4k-instruct` | bf16 argmax agreement; fused projections |
-| Llama | `unsloth/Llama-3.2-1B-Instruct` | fp32 argmax agreement |
-| SmolLM2 | `HuggingFaceTB/SmolLM2-360M-Instruct` | bf16 argmax agreement |
-
-Twelve surveyed checkpoints currently load, including larger Qwen3, Phi-4,
-Mistral, Yi, and Muse Glimmer variants. See the generated
-[model compatibility matrix](docs/MODELS.md) for exact shapes, validation
-notes, and refusal reasons.
-
-Not implemented yet: MoE routing, Mamba/state-space layers, pre-quantized
-weights, partial rotary embeddings, and architectures with per-layer-type
-head shapes.
+Not yet supported: MoE, state-space layers, pre-quantized weights, partial RoPE,
+or architectures with per-layer-type head shapes.
 
 ## Development
 
@@ -232,16 +208,8 @@ uv build
 uv run pytest
 ```
 
-GPU kernel tests require compatible NVIDIA hardware; packaging and import
-checks run without a GPU. Benchmark results from other GPUs are especially
-welcome—see [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Acknowledgements
-
-Built on [NVIDIA cuTile Python](https://github.com/NVIDIA/cutile-python), with
-correctness references from [PyTorch](https://pytorch.org/),
-[Transformers](https://github.com/huggingface/transformers), and
-[minGPT](https://github.com/karpathy/minGPT).
+GPU tests require compatible NVIDIA hardware. Contributions and benchmark results
+from other GPUs are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 

@@ -1,0 +1,34 @@
+{
+  "date": "2026-08-18",
+  "model": "Qwen/Qwen3-0.6B",
+  "batch": 1,
+  "hardware": {
+    "gpu": "NVIDIA GB10",
+    "driver": "590.48.01"
+  },
+  "software": {
+    "cuda_tile": "1.5.0",
+    "cupy": "14.1.1",
+    "pytorch": "2.13.0+cu130",
+    "transformers": "4.57.6"
+  },
+  "results_ms": [
+    {"phase": "prefill", "sequence": 128, "torch_eager": 12.841, "torch_compile_no_graph": 8.101, "cutile_cudagraph": 8.570},
+    {"phase": "prefill", "sequence": 512, "torch_eager": 24.855, "torch_compile_no_graph": 15.125, "cutile_cudagraph": 15.715},
+    {"phase": "decode", "context": 128, "torch_eager": 11.716, "torch_compile_no_graph": 6.750, "cutile_eager": 6.502},
+    {"phase": "decode", "context": 512, "torch_eager": 12.208, "torch_compile_no_graph": 7.403, "cutile_eager": 7.181},
+    {"phase": "decode", "context": 2048, "torch_eager": 14.119, "cutile_eager": 9.470}
+  ],
+  "steady_state_decode_launches": {
+    "before": 350,
+    "after": 227
+  },
+  "gelu_mlp_fusion": {
+    "shape": [64, 384, 1536],
+    "dtype": "float32",
+    "historical_single_kernel_ms": 4.1834,
+    "separate_kernels_ms": 0.0255,
+    "staged_fusion_ms": 0.0207,
+    "staged_speedup": 1.233
+  }
+}

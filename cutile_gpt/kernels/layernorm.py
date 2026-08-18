@@ -82,7 +82,10 @@ def cutile_layer_norm(
     """
     Apply Layer Normalization using cutile kernel.
 
-    Handles non-power-of-2 dimensions by padding.
+    Handles non-power-of-2 dimensions with cuTile's boundary padding.  The
+    input and affine parameters stay in their original storage; materializing
+    padded copies here would add several launches and a full HBM round-trip on
+    every normalization.
 
     Args:
         x: Input tensor (..., normalized_shape)
@@ -106,31 +109,15 @@ def cutile_layer_norm(
     while n_embd_padded % TILE_N != 0:
         TILE_N //= 2
 
-    needs_padding = n_embd_padded != n_embd
-
     # Flatten to 2D
     x_2d = cp.reshape(x, (-1, n_embd))
     M = x_2d.shape[0]
 
-    if needs_padding:
-        x_padded = cp.zeros((M, n_embd_padded), dtype=x.dtype)
-        x_padded[:, :n_embd] = x_2d
-        weight_padded = cp.zeros(n_embd_padded, dtype=weight.dtype)
-        weight_padded[:n_embd] = weight
-        bias_padded = cp.zeros(n_embd_padded, dtype=bias.dtype)
-        bias_padded[:n_embd] = bias
-    else:
-        x_padded = x_2d
-        weight_padded = weight
-        bias_padded = bias
-
-    y_padded = cp.empty_like(x_padded)
+    y = cp.empty_like(x_2d)
 
     ct.launch(cp.cuda.get_current_stream(), (M,), layer_norm_kernel,
-              (x_padded, weight_padded, bias_padded, y_padded, eps, n_embd, TILE_N))
+              (x_2d, weight, bias, y, eps, n_embd, TILE_N))
 
-    # Slice back
-    y = y_padded[:, :n_embd]
     return cp.reshape(y, original_shape)
 
 

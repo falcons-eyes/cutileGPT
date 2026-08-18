@@ -22,7 +22,14 @@ def next_power_of_2(n: int) -> int:
 
 
 @ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
-def embedding_kernel(indices, weight, output, TILE_SEQ: ConstInt, N_EMBD_PADDED: ConstInt):
+def embedding_kernel(
+    indices,
+    weight,
+    output,
+    TILE_SEQ: ConstInt,
+    TILE_EMBD: ConstInt,
+    N_EMBD: ConstInt,
+):
     """
     Embedding lookup kernel using gather.
 
@@ -31,7 +38,8 @@ def embedding_kernel(indices, weight, output, TILE_SEQ: ConstInt, N_EMBD_PADDED:
         weight: Embedding weight matrix (vocab_size, n_embd_padded)
         output: Output tensor (total_tokens, n_embd_padded)
         TILE_SEQ: Tile size for sequence (power of 2)
-        N_EMBD_PADDED: Padded embedding dim (power of 2)
+        TILE_EMBD: Power-of-two tile width
+        N_EMBD: Actual embedding width
     """
     bid = ct.bid(0)
 
@@ -43,10 +51,16 @@ def embedding_kernel(indices, weight, output, TILE_SEQ: ConstInt, N_EMBD_PADDED:
     # row_idx: which row to select (based on token id)
     # col_idx: which columns (all of them)
     row_idx = idx_tile[:, None]  # (TILE_SEQ, 1)
-    col_idx = ct.arange(N_EMBD_PADDED, dtype=ct.int32)[None, :]  # (1, N_EMBD_PADDED)
+    col_idx = ct.arange(TILE_EMBD, dtype=ct.int32)[None, :]
 
     # Gather: result[i, j] = weight[row_idx[i, 0], col_idx[0, j]]
-    emb = ct.gather(weight, (row_idx, col_idx))  # (TILE_SEQ, N_EMBD_PADDED)
+    emb = ct.gather(
+        weight,
+        (row_idx, col_idx),
+        mask=(col_idx < N_EMBD) & (row_idx >= 0) & (row_idx < weight.shape[0]),
+        padding_value=0,
+        check_bounds=False,
+    )
 
     # Store result
     ct.store(output, index=(bid, 0), tile=emb.astype(output.dtype))
@@ -56,7 +70,9 @@ def cutile_embedding(indices: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
     """
     Perform embedding lookup using cutile kernel.
 
-    Handles non-power-of-2 embedding dimensions by padding.
+    Handles non-power-of-2 embedding dimensions with a masked gather.  This is
+    deliberately not implemented by padding the vocabulary matrix: doing so
+    copied the entire embedding table on every forward pass.
 
     Args:
         indices: Token indices (batch, seq_len) or (seq_len,)
@@ -73,39 +89,20 @@ def cutile_embedding(indices: cp.ndarray, weight: cp.ndarray) -> cp.ndarray:
 
     # Pad n_embd to power of 2 if needed
     n_embd_padded = next_power_of_2(n_embd)
-    needs_padding = n_embd_padded != n_embd
-
-    if needs_padding:
-        # Pad weight matrix: (vocab_size, n_embd) -> (vocab_size, n_embd_padded)
-        weight_padded = cp.zeros((vocab_size, n_embd_padded), dtype=weight.dtype)
-        weight_padded[:, :n_embd] = weight
-    else:
-        weight_padded = weight
-
     # Flatten indices
-    indices_flat = cp.reshape(indices, -1).astype(cp.int32)
+    indices_flat = cp.reshape(indices, -1)
+    if indices_flat.dtype != cp.int32:
+        indices_flat = indices_flat.astype(cp.int32)
     total_tokens = indices_flat.size
 
     # Tile size for sequence (also power of 2)
     TILE_SEQ = min(64, next_power_of_2(total_tokens))
 
-    # Pad total_tokens to multiple of TILE_SEQ
-    padded_tokens = math.ceil(total_tokens / TILE_SEQ) * TILE_SEQ
-    if padded_tokens > total_tokens:
-        indices_padded = cp.zeros(padded_tokens, dtype=cp.int32)
-        indices_padded[:total_tokens] = indices_flat
-        indices_flat = indices_padded
-
-    # Output
-    output = cp.empty((padded_tokens, n_embd_padded), dtype=weight.dtype)
-
-    grid = (padded_tokens // TILE_SEQ, 1, 1)
+    output = cp.empty((total_tokens, n_embd), dtype=weight.dtype)
+    grid = (math.ceil(total_tokens / TILE_SEQ), 1, 1)
 
     ct.launch(cp.cuda.get_current_stream(), grid, embedding_kernel,
-              (indices_flat, weight_padded, output, TILE_SEQ, n_embd_padded))
-
-    # Slice back to original dimensions
-    output = output[:total_tokens, :n_embd]
+              (indices_flat, weight, output, TILE_SEQ, n_embd_padded, n_embd))
 
     return cp.reshape(output, (*original_shape, n_embd))
 

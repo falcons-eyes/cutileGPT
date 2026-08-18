@@ -102,7 +102,7 @@ def main() -> int:
         start = time.time()
         for step in range(args.tokens):
             inp = out if (cache is None or step == 0) else out[:, -1:]
-            logits = model.forward(inp, cache=cache)
+            logits = model.forward(inp, cache=cache, last_token_only=True)
             nxt = cp.argmax(logits[:, -1, :], axis=-1).astype(cp.int32).reshape(1, 1)
             out = cp.concatenate([out, nxt], axis=1)
         cp.cuda.Stream.null.synchronize()

@@ -11,14 +11,80 @@ Optimized MatMul with:
 """
 
 import math
+from dataclasses import dataclass
 
 import cuda.tile as ct
 import cupy as cp
+
+from ..planner import (
+    DEFAULT_TACTIC_CACHE,
+    Backend,
+    ExecutionPhase,
+    RegionKind,
+    TacticSelection,
+    TensorContract,
+    TileRegion,
+    cuda_target,
+)
 
 ConstInt = ct.Constant[int]
 
 # Swizzle pattern for better L2 cache locality (from official sample)
 GROUP_SIZE_M = 8
+_LINEAR_TARGET = cuda_target()
+
+
+@dataclass(frozen=True)
+class LinearTileConfig:
+    tm: int
+    tn: int
+    tk: int
+
+
+def _linear_region(dtype, m: int, n: int, k: int) -> TileRegion:
+    phase = ExecutionPhase.DECODE if m <= 16 else ExecutionPhase.PREFILL
+    dtype_name = str(dtype)
+    return TileRegion.create(
+        RegionKind.LINEAR,
+        inputs=(
+            TensorContract("x", (m, k), dtype_name, "row_major"),
+            TensorContract("weight", (n, k), dtype_name, "row_major"),
+        ),
+        phase=phase,
+        target=_LINEAR_TARGET,
+        attributes={"weight_layout": "out_in"},
+    )
+
+
+def linear_tile_sizes(
+    dtype, m: int, n: int = 0, k: int = 0
+) -> tuple[int, int, int]:
+    """Shape-aware baseline selected from GB10 sweeps.
+
+    The short-row case is the decode/GEMV path.  Keeping TM at 128 there made
+    one useful row pay for 127 padded rows; TM=16 was consistently faster for
+    fp32, fp16, and bf16 while remaining a tensor-core-compatible shape.
+    """
+    tuned = DEFAULT_TACTIC_CACHE.get(_linear_region(dtype, m, n, k))
+    if tuned is not None and {"tm", "tn", "tk"} <= tuned.parameters.keys():
+        return (
+            int(tuned.parameters["tm"]),
+            int(tuned.parameters["tn"]),
+            int(tuned.parameters["tk"]),
+        )
+    if m <= 16:
+        if dtype.itemsize == 2:
+            # Wide reductions and very large output matrices are bandwidth
+            # bound at decode time; a deeper K tile and narrower N tile avoid
+            # repeatedly staging the single input row. Smaller projections
+            # retain a wider N tile to amortize launch/block overhead.
+            if k >= 2048 or n >= 65536:
+                return 16, 64, 256
+            return 16, 128, 128
+        return 16, 128, 32
+    if dtype.itemsize == 2:
+        return 128, 128, 64
+    return 32, 32, 32
 
 
 def swizzle_2d(M, N, tm, tn):
@@ -73,6 +139,75 @@ def matmul_kernel(A, B, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
 
 
 @ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_weight_kernel(A, W, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
+    """C = A @ W.T while W stays in Hugging Face's (N, K) layout."""
+    M = A.shape[0]
+    N = W.shape[0]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    num_tiles_k = ct.num_tiles(A, axis=1, shape=(tm, tk))
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+
+    for k in range(num_tiles_k):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        # W is (N, K).  Transposing this on-chip tile avoids transposing or
+        # copying the full weight on the host.
+        w = ct.load(W, index=(bid_n, k), shape=(tn, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, ct.transpose(w), acc)
+
+    ct.store(C, index=(bid_m, bid_n), tile=acc.astype(C.dtype))
+
+
+def autotune_linear(
+    x: cp.ndarray,
+    weight: cp.ndarray,
+    *,
+    candidates: tuple[LinearTileConfig, ...] | None = None,
+    quiet: bool = False,
+):
+    """Benchmark tile shapes for one exact linear shape and cache the winner."""
+    x_2d = cp.reshape(x, (-1, x.shape[-1]))
+    if not x_2d.flags.c_contiguous:
+        x_2d = cp.ascontiguousarray(x_2d)
+    m, k = x_2d.shape
+    n = weight.shape[0]
+    output = cp.empty((m, n), dtype=x.dtype)
+    if candidates is None:
+        candidates = (
+            LinearTileConfig(16, 64, 32),
+            LinearTileConfig(16, 128, 32),
+            LinearTileConfig(16, 128, 64),
+            LinearTileConfig(32, 64, 32),
+            LinearTileConfig(32, 128, 32),
+            LinearTileConfig(64, 64, 32),
+            LinearTileConfig(64, 128, 64),
+            LinearTileConfig(128, 128, 64),
+        )
+
+    result = ct.tune.exhaustive_search(
+        candidates,
+        cp.cuda.get_current_stream(),
+        lambda cfg: (math.ceil(m / cfg.tm) * math.ceil(n / cfg.tn), 1, 1),
+        matmul_weight_kernel,
+        lambda cfg: (x_2d, weight, output, cfg.tm, cfg.tn, cfg.tk),
+        quiet=quiet,
+    )
+    best = result.best.config
+    DEFAULT_TACTIC_CACHE.put(
+        _linear_region(x.dtype, m, n, k),
+        TacticSelection(
+            candidate="cutile.matmul_weight",
+            backend=Backend.CUTILE,
+            parameters={"tm": best.tm, "tn": best.tn, "tk": best.tk},
+        ),
+    )
+    return result
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
 def matmul_bias_kernel(A, B, bias, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     """
     Fused matrix multiplication with bias: C = A @ B + bias
@@ -110,6 +245,127 @@ def matmul_bias_kernel(A, B, bias, C, tm: ConstInt, tn: ConstInt, tk: ConstInt):
     ct.store(C, index=(bid_m, bid_n), tile=acc.astype(C.dtype))
 
 
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_weight_bias_kernel(
+    A, W, bias, C, tm: ConstInt, tn: ConstInt, tk: ConstInt
+):
+    """C = A @ W.T + bias with W read directly in (N, K) layout."""
+    M = A.shape[0]
+    N = W.shape[0]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    num_tiles_k = ct.num_tiles(A, axis=1, shape=(tm, tk))
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+
+    for k in range(num_tiles_k):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        w = ct.load(W, index=(bid_n, k), shape=(tn, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, ct.transpose(w), acc)
+
+    b = ct.load(bias, index=(bid_n,), shape=(tn,),
+                padding_mode=zero_pad, latency=2, allow_tma=True)
+    ct.store(C, index=(bid_m, bid_n), tile=(acc + b).astype(C.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_weight_residual_kernel(
+    A, W, Residual, C, tm: ConstInt, tn: ConstInt, tk: ConstInt
+):
+    """C = A @ W.T + Residual."""
+    M = A.shape[0]
+    N = W.shape[0]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+    for k in range(ct.num_tiles(A, axis=1, shape=(tm, tk))):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        w = ct.load(W, index=(bid_n, k), shape=(tn, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, ct.transpose(w), acc)
+    residual = ct.load(Residual, index=(bid_m, bid_n), shape=(tm, tn),
+                       padding_mode=zero_pad, latency=2, allow_tma=True)
+    ct.store(C, index=(bid_m, bid_n), tile=(acc + residual).astype(C.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_weight_bias_residual_kernel(
+    A, W, bias, Residual, C, tm: ConstInt, tn: ConstInt, tk: ConstInt
+):
+    """C = A @ W.T + bias + Residual."""
+    M = A.shape[0]
+    N = W.shape[0]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+    for k in range(ct.num_tiles(A, axis=1, shape=(tm, tk))):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        w = ct.load(W, index=(bid_n, k), shape=(tn, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, ct.transpose(w), acc)
+    b = ct.load(bias, index=(bid_n,), shape=(tn,),
+                padding_mode=zero_pad, latency=2, allow_tma=True)
+    residual = ct.load(Residual, index=(bid_m, bid_n), shape=(tm, tn),
+                       padding_mode=zero_pad, latency=2, allow_tma=True)
+    ct.store(C, index=(bid_m, bid_n), tile=(acc + b + residual).astype(C.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_residual_kernel(
+    A, B, Residual, C, tm: ConstInt, tn: ConstInt, tk: ConstInt
+):
+    """C = A @ B + Residual for a prepacked (K, N) weight."""
+    M = A.shape[0]
+    N = B.shape[1]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+    for k in range(ct.num_tiles(A, axis=1, shape=(tm, tk))):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        b = ct.load(B, index=(k, bid_n), shape=(tk, tn),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, b, acc)
+    residual = ct.load(Residual, index=(bid_m, bid_n), shape=(tm, tn),
+                       padding_mode=zero_pad, latency=2, allow_tma=True)
+    ct.store(C, index=(bid_m, bid_n), tile=(acc + residual).astype(C.dtype))
+
+
+@ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
+def matmul_bias_residual_kernel(
+    A, B, bias, Residual, C, tm: ConstInt, tn: ConstInt, tk: ConstInt
+):
+    """C = A @ B + bias + Residual for a prepacked (K, N) weight."""
+    M = A.shape[0]
+    N = B.shape[1]
+    bid_m, bid_n = swizzle_2d(M, N, tm, tn)
+    acc = ct.full((tm, tn), 0, dtype=ct.float32)
+    zero_pad = ct.PaddingMode.ZERO
+    dtype = ct.tfloat32 if A.dtype == ct.float32 else A.dtype
+    for k in range(ct.num_tiles(A, axis=1, shape=(tm, tk))):
+        a = ct.load(A, index=(bid_m, k), shape=(tm, tk),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        b = ct.load(B, index=(k, bid_n), shape=(tk, tn),
+                    padding_mode=zero_pad, latency=4, allow_tma=True).astype(dtype)
+        acc = ct.mma(a, b, acc)
+    bias_tile = ct.load(bias, index=(bid_n,), shape=(tn,),
+                        padding_mode=zero_pad, latency=2, allow_tma=True)
+    residual = ct.load(Residual, index=(bid_m, bid_n), shape=(tm, tn),
+                       padding_mode=zero_pad, latency=2, allow_tma=True)
+    ct.store(
+        C,
+        index=(bid_m, bid_n),
+        tile=(acc + bias_tile + residual).astype(C.dtype),
+    )
+
+
 def cutile_linear(x: cp.ndarray, weight: cp.ndarray, weight_t: cp.ndarray = None) -> cp.ndarray:
     """
     Linear transformation without bias: y = x @ weight.T
@@ -137,27 +393,22 @@ def cutile_linear(x: cp.ndarray, weight: cp.ndarray, weight_t: cp.ndarray = None
     M = x_2d.shape[0]
     N = out_features
 
-    # Use pre-computed transpose if available, otherwise compute it
-    if weight_t is None:
-        weight_t = cp.transpose(weight)  # (in_features, out_features)
-        if not weight_t.flags.c_contiguous:
-            weight_t = cp.ascontiguousarray(weight_t)
-
     # Output
     output = cp.empty((M, N), dtype=x.dtype)
 
-    # Tile sizes - larger for fp16/bf16 (tensor cores), smaller for fp32
-    if x.dtype in (cp.float16, cp.dtype('float16')):
-        tm, tn, tk = 128, 128, 64  # Larger tiles for tensor cores
-    else:
-        tm, tn, tk = 32, 32, 32  # Use TF32 tensor cores
+    # Tile sizes - larger for 16-bit tensor-core inputs, including bfloat16.
+    tm, tn, tk = linear_tile_sizes(x.dtype, M, N, in_features)
 
     grid_m = math.ceil(M / tm)
     grid_n = math.ceil(N / tn)
     grid = (grid_m * grid_n, 1, 1)
 
-    ct.launch(cp.cuda.get_current_stream(), grid, matmul_kernel,
-              (x_2d, weight_t, output, tm, tn, tk))
+    if weight_t is None:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_weight_kernel,
+                  (x_2d, weight, output, tm, tn, tk))
+    else:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_kernel,
+                  (x_2d, weight_t, output, tm, tn, tk))
 
     return cp.reshape(output, (*original_shape, out_features))
 
@@ -197,30 +448,78 @@ def cutile_linear_bias(
     M = x_2d.shape[0]
     N = out_features
 
-    # Use pre-computed transpose if available, otherwise compute it
-    if weight_t is None:
-        weight_t = cp.transpose(weight)
-        if not weight_t.flags.c_contiguous:
-            weight_t = cp.ascontiguousarray(weight_t)
-
     # Output
     output = cp.empty((M, N), dtype=x.dtype)
 
     # Tile sizes
-    if x.dtype in (cp.float16, cp.dtype('float16')):
-        tm, tn, tk = 128, 128, 64
-    else:
-        tm, tn, tk = 32, 32, 32
+    tm, tn, tk = linear_tile_sizes(x.dtype, M, N, in_features)
 
     grid_m = math.ceil(M / tm)
     grid_n = math.ceil(N / tn)
     grid = (grid_m * grid_n, 1, 1)
 
-    # Use fused matmul+bias kernel
-    ct.launch(cp.cuda.get_current_stream(), grid, matmul_bias_kernel,
-              (x_2d, weight_t, bias, output, tm, tn, tk))
+    if weight_t is None:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_weight_bias_kernel,
+                  (x_2d, weight, bias, output, tm, tn, tk))
+    else:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_bias_kernel,
+                  (x_2d, weight_t, bias, output, tm, tn, tk))
 
     return cp.reshape(output, (*original_shape, out_features))
+
+
+def cutile_linear_residual(
+    x: cp.ndarray,
+    weight: cp.ndarray,
+    residual: cp.ndarray,
+    bias: cp.ndarray | None = None,
+    weight_t: cp.ndarray | None = None,
+) -> cp.ndarray:
+    """Linear projection whose epilogue adds the residual in the same kernel."""
+    if not isinstance(x, cp.ndarray) or not isinstance(weight, cp.ndarray):
+        raise ValueError("Tensors must be CuPy arrays on CUDA device")
+
+    in_features = x.shape[-1]
+    out_features = weight.shape[0]
+    x_2d = cp.reshape(x, (-1, in_features))
+    if not x_2d.flags.c_contiguous:
+        x_2d = cp.ascontiguousarray(x_2d)
+    residual_2d = cp.reshape(residual, (-1, out_features))
+    if not residual_2d.flags.c_contiguous:
+        residual_2d = cp.ascontiguousarray(residual_2d)
+    if residual_2d.shape[0] != x_2d.shape[0]:
+        raise ValueError(
+            f"residual rows must match input rows, got {residual_2d.shape[0]} "
+            f"and {x_2d.shape[0]}"
+        )
+
+    output = cp.empty_like(residual_2d)
+    tm, tn, tk = linear_tile_sizes(
+        x.dtype, x_2d.shape[0], out_features, in_features
+    )
+    grid = (math.ceil(x_2d.shape[0] / tm) * math.ceil(out_features / tn), 1, 1)
+
+    if weight_t is not None and bias is None:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_residual_kernel,
+                  (x_2d, weight_t, residual_2d, output, tm, tn, tk))
+    elif weight_t is not None:
+        ct.launch(
+            cp.cuda.get_current_stream(),
+            grid,
+            matmul_bias_residual_kernel,
+            (x_2d, weight_t, bias, residual_2d, output, tm, tn, tk),
+        )
+    elif bias is None:
+        ct.launch(cp.cuda.get_current_stream(), grid, matmul_weight_residual_kernel,
+                  (x_2d, weight, residual_2d, output, tm, tn, tk))
+    else:
+        ct.launch(
+            cp.cuda.get_current_stream(),
+            grid,
+            matmul_weight_bias_residual_kernel,
+            (x_2d, weight, bias, residual_2d, output, tm, tn, tk),
+        )
+    return cp.reshape(output, residual.shape)
 
 
 # Reference implementation using CuPy

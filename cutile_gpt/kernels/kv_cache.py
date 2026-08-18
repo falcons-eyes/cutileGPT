@@ -105,9 +105,36 @@ class KVCache:
         if layer_idx == self.n_layer - 1:
             self.length = end
 
+        # These are strided views into the fixed-capacity cache.  cuTile arrays
+        # carry strides, so attention can read them directly; making them
+        # contiguous here copied the entire history twice at every decode step.
         return (
-            cp.ascontiguousarray(self.k[layer_idx, :, :, :end]),
-            cp.ascontiguousarray(self.v[layer_idx, :, :, :end]),
+            self.k[layer_idx, :, :, :end],
+            self.v[layer_idx, :, :, :end],
+        )
+
+    def reserve(self, layer_idx: int, new_len: int):
+        """Expose write slots and history views for a fused producer kernel."""
+        if not 0 <= layer_idx < self.n_layer:
+            raise IndexError(
+                f"layer_idx {layer_idx} out of range for {self.n_layer} layers"
+            )
+        if new_len <= 0:
+            raise ValueError(f"new_len must be positive, got {new_len}")
+        end = self.length + new_len
+        if end > self.max_seq_len:
+            raise ValueError(
+                f"cache overflow: {self.length} + {new_len} exceeds "
+                f"max_seq_len={self.max_seq_len}"
+            )
+        start = self.length
+        if layer_idx == self.n_layer - 1:
+            self.length = end
+        return (
+            self.k[layer_idx, :, :, start:end],
+            self.v[layer_idx, :, :, start:end],
+            self.k[layer_idx, :, :, :end],
+            self.v[layer_idx, :, :, :end],
         )
 
     def __repr__(self) -> str:

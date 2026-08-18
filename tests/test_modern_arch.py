@@ -14,13 +14,19 @@ cp = pytest.importorskip("cupy")
 torch = pytest.importorskip("torch")
 
 from cutile_gpt import (
+    KVCache,
     cutile_causal_attention,
+    cutile_embedding,
     cutile_linear,
+    cutile_qk_norm_rope,
+    cutile_qk_norm_rope_cached,
     cutile_rms_norm,
     cutile_rope,
     cutile_swiglu_mlp,
     rope_tables,
 )
+from cutile_gpt.models.hf_config import ModelArchitecture
+from cutile_gpt.models.transformer import TransformerLM
 
 
 def gpu_available():
@@ -40,6 +46,40 @@ TF32_TOL = 5e-3
 
 def to_cupy(t):
     return cp.from_dlpack(t.contiguous())
+
+
+def test_qkv_packing_does_not_mutate_callers_weight_mapping():
+    arch = ModelArchitecture(
+        model_type="test", n_layer=1, hidden_size=64, n_head=4,
+        n_kv_head=2, head_dim=16, intermediate_size=128, vocab_size=256,
+        max_position=128, rope_theta=10000, rms_eps=1e-6,
+        tie_word_embeddings=True, qk_norm=False, sliding_window=0,
+    )
+    prefix = "model.layers.0.self_attn."
+    weights = {
+        prefix + "q_proj.weight": cp.zeros((64, 64), dtype=cp.float32),
+        prefix + "k_proj.weight": cp.zeros((32, 64), dtype=cp.float32),
+        prefix + "v_proj.weight": cp.zeros((32, 64), dtype=cp.float32),
+    }
+    original_keys = set(weights)
+
+    model = TransformerLM(arch, weights)
+
+    assert set(weights) == original_keys
+    assert prefix + "qkv_proj.weight" in model.weights
+    assert not (original_keys & set(model.weights))
+
+
+def test_embedding_masks_invalid_rows_without_out_of_bounds_access():
+    weight = cp.arange(10 * 48, dtype=cp.float32).reshape(10, 48)
+    indices = cp.array([[-1, 0, 9, 10]], dtype=cp.int32)
+    got = cutile_embedding(indices, weight)
+    cp.cuda.Stream.null.synchronize()
+
+    assert float(cp.abs(got[0, 0]).max()) == 0.0
+    assert float(cp.abs(got[0, 3]).max()) == 0.0
+    assert float(cp.abs(got[0, 1] - weight[0]).max()) == 0.0
+    assert float(cp.abs(got[0, 2] - weight[9]).max()) == 0.0
 
 
 @pytest.mark.parametrize("n_embd", [48, 768, 6656])
@@ -187,6 +227,58 @@ def test_rope_shared_between_query_and_key_head_counts():
 
     assert (torch.from_dlpack(gq) - _hf_rope(q, cos, sin)).abs().max().item() < 1e-5
     assert (torch.from_dlpack(gk) - _hf_rope(k, cos, sin)).abs().max().item() < 1e-5
+
+
+def test_fused_qk_norm_rope_and_cache_write_match_separate_path():
+    """Qwen's QK-Norm, RoPE, and cache writes remain numerically identical."""
+    torch.manual_seed(0)
+    batch, n_head, n_kv_head, seq, head_dim = 1, 16, 8, 17, 64
+    q = to_cupy(torch.randn(batch, n_head, seq, head_dim, device="cuda"))
+    k = to_cupy(torch.randn(batch, n_kv_head, seq, head_dim, device="cuda"))
+    v = to_cupy(torch.randn(batch, n_kv_head, seq, head_dim, device="cuda"))
+    qw = to_cupy(torch.rand(head_dim, device="cuda") + 0.5)
+    kw = to_cupy(torch.rand(head_dim, device="cuda") + 0.5)
+    cos, sin = rope_tables(seq, head_dim, theta=1_000_000.0)
+
+    fused_q, fused_k = cutile_qk_norm_rope(q, k, qw, kw, cos, sin)
+    ref_q = cutile_rope(cutile_rms_norm(q, qw), cos, sin)
+    ref_k = cutile_rope(cutile_rms_norm(k, kw), cos, sin)
+
+    cache = KVCache(1, batch, n_kv_head, seq + 3, head_dim)
+    k_slot, v_slot, k_history, v_history = cache.reserve(0, seq)
+    cached_q = cutile_qk_norm_rope_cached(
+        q, k, v, qw, kw, cos, sin, k_slot, v_slot
+    )
+    cp.cuda.Stream.null.synchronize()
+
+    assert float(cp.abs(fused_q - ref_q).max()) < 1e-5
+    assert float(cp.abs(fused_k - ref_k).max()) < 1e-5
+    assert float(cp.abs(cached_q - fused_q).max()) == 0.0
+    assert float(cp.abs(k_history - fused_k).max()) == 0.0
+    assert float(cp.abs(v_history - v).max()) == 0.0
+    assert cache.length == seq
+
+
+def test_fused_qk_norm_rope_preserves_bfloat16_rounding_boundary():
+    torch.manual_seed(1)
+    batch, n_head, n_kv_head, seq, head_dim = 1, 8, 2, 9, 64
+    q = to_cupy(torch.randn(
+        batch, n_head, seq, head_dim, device="cuda", dtype=torch.bfloat16
+    ))
+    k = to_cupy(torch.randn(
+        batch, n_kv_head, seq, head_dim, device="cuda", dtype=torch.bfloat16
+    ))
+    qw = to_cupy(torch.rand(head_dim, device="cuda", dtype=torch.bfloat16) + 0.5)
+    kw = to_cupy(torch.rand(head_dim, device="cuda", dtype=torch.bfloat16) + 0.5)
+    cos, sin = rope_tables(seq, head_dim, theta=1_000_000.0)
+
+    fused_q, fused_k = cutile_qk_norm_rope(q, k, qw, kw, cos, sin)
+    ref_q = cutile_rope(cutile_rms_norm(q, qw), cos, sin)
+    ref_k = cutile_rope(cutile_rms_norm(k, kw), cos, sin)
+    cp.cuda.Stream.null.synchronize()
+
+    assert float(cp.abs(fused_q - ref_q).max()) == 0.0
+    assert float(cp.abs(fused_k - ref_k).max()) == 0.0
 
 
 def test_rope_rejects_odd_head_dim():

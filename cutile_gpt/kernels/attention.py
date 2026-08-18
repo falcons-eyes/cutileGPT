@@ -201,11 +201,27 @@ def cutile_causal_attention(
     Returns:
         Attention output (batch, n_head, q_len, head_dim)
     """
-    if not isinstance(q, cp.ndarray):
+    if not all(isinstance(t, cp.ndarray) for t in (q, k, v)):
         raise ValueError("Tensors must be CuPy arrays on CUDA device")
+    if q.ndim != 4 or k.ndim != 4 or v.ndim != 4:
+        raise ValueError("Q, K, and V must all have shape (batch, head, seq, dim)")
 
-    batch, n_head, seq_len, head_dim = q.shape
+    batch, q_heads, seq_len, head_dim = q.shape
     kv_len = k.shape[2]
+    if seq_len <= 0 or kv_len <= 0:
+        raise ValueError("Q and K/V sequence lengths must be positive")
+    if q_heads != n_head:
+        raise ValueError(f"Q carries {q_heads} heads but n_head={n_head}")
+    if k.shape[0] != batch or v.shape[0] != batch:
+        raise ValueError(
+            f"Q/K/V batch sizes differ: {batch}, {k.shape[0]}, {v.shape[0]}"
+        )
+    if k.shape[3] != head_dim or v.shape[3] != head_dim:
+        raise ValueError(
+            f"Q/K/V head dimensions differ: {head_dim}, {k.shape[3]}, {v.shape[3]}"
+        )
+    if q.dtype != k.dtype or q.dtype != v.dtype:
+        raise ValueError(f"Q/K/V dtypes differ: {q.dtype}, {k.dtype}, {v.dtype}")
 
     if q_offset is None:
         q_offset = kv_len - seq_len
@@ -231,23 +247,18 @@ def cutile_causal_attention(
     if v.shape[2] != kv_len:
         raise ValueError(f"K and V lengths differ: {kv_len} vs {v.shape[2]}")
 
-    # Ensure contiguous memory layout for better performance
-    if not q.flags.c_contiguous:
-        q = cp.ascontiguousarray(q)
-    if not k.flags.c_contiguous:
-        k = cp.ascontiguousarray(k)
-    if not v.flags.c_contiguous:
-        v = cp.ascontiguousarray(v)
-
     # Scale factor
     qk_scale = 1.0 / math.sqrt(head_dim)
 
-    # Output tensor
-    out = cp.empty_like(q)
+    # Always return BHSD-contiguous storage.  Inputs may be strided views
+    # (notably QKV transposes and the fixed-capacity KV cache); cuTile consumes
+    # their strides directly instead of materializing layout copies.
+    out = cp.empty(q.shape, dtype=q.dtype)
 
-    # Tile sizes must be power of 2 for cutile
-    # Use fixed 64x64 tiles (power of 2) with padding
-    tile_m = 64
+    # Decode usually has one query row.  Compiling it as a 64-row tile wastes
+    # almost all MMA/reduction work, so specialize short query lengths while
+    # retaining 64 rows for throughput-oriented prefill.
+    tile_m = min(64, 1 << (seq_len - 1).bit_length())
     tile_n = 64
     # cutile needs power-of-two tile dims. head_dim usually is one, but Phi
     # uses 96 - rounding up leaves the extra lanes zero-padded on load and

@@ -101,23 +101,13 @@ def cutile_rms_norm(
 
     x_2d = cp.reshape(x, (-1, n_embd))
     M = x_2d.shape[0]
-
-    if n_embd_padded != n_embd:
-        x_padded = cp.zeros((M, n_embd_padded), dtype=x.dtype)
-        x_padded[:, :n_embd] = x_2d
-        weight_padded = cp.zeros(n_embd_padded, dtype=weight.dtype)
-        weight_padded[:n_embd] = weight
-    else:
-        x_padded = x_2d
-        weight_padded = weight
-
-    y_padded = cp.empty_like(x_padded)
+    y = cp.empty_like(x_2d)
 
     ct.launch(cp.cuda.get_current_stream(), (M,), rms_norm_kernel,
-              (x_padded, weight_padded, y_padded, eps, n_embd, TILE_N,
+              (x_2d, weight, y, eps, n_embd, TILE_N,
                unit_offset))
 
-    return cp.reshape(y_padded[:, :n_embd], original_shape)
+    return cp.reshape(y, original_shape)
 
 
 def cupy_rms_norm(

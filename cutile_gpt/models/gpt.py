@@ -12,14 +12,14 @@ from typing import Dict, Optional, Tuple
 import cupy as cp
 
 from ..kernels import (
-    cutile_causal_attention,
     cutile_embedding,
-    cutile_gelu,
     cutile_layer_norm,
     cutile_linear,
     cutile_linear_bias,
 )
 from ..kernels.kv_cache import KVCache
+from ..planner import ExecutionPhase, RegionKind, length_bucket
+from ..regions import TileRuntime
 from .config import GPTConfig
 
 
@@ -49,6 +49,7 @@ class CutileGPT:
         self.config = config
         self.weights: Dict[str, cp.ndarray] = {}
         self.weight_transposes: Dict[str, cp.ndarray] = {}
+        self.tile_runtime = TileRuntime()
         self._init_weights()
         self._precompute_transposes()
 
@@ -108,7 +109,8 @@ class CutileGPT:
     def __call__(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
         return self.forward(idx)
 
-    def forward(self, idx: cp.ndarray, cache: "KVCache | None" = None
+    def forward(self, idx: cp.ndarray, cache: "KVCache | None" = None,
+                last_token_only: bool = False,
                 ) -> Tuple[cp.ndarray, None]:
         """
         Forward pass using cutile kernels.
@@ -121,6 +123,9 @@ class CutileGPT:
                 the prefix is not recomputed. Positions are taken from the
                 cache length, which is what keeps the position embedding right
                 for a single-token call.
+            last_token_only: Project only the final hidden state into the
+                vocabulary. Generation never consumes earlier logits, and
+                avoiding their LM-head GEMM is a large prefill saving.
 
         Returns:
             Tuple of (logits, None)
@@ -128,6 +133,13 @@ class CutileGPT:
         batch_size, seq_len = idx.shape
         cfg = self.config
         past_len = cache.length if cache is not None else 0
+        phase = (
+            ExecutionPhase.DECODE
+            if cache is not None and past_len > 0
+            else ExecutionPhase.PREFILL
+        )
+        self.tile_runtime.begin_step()
+        token_bucket = (batch_size, length_bucket(seq_len))
         total_len = past_len + seq_len
         assert total_len <= cfg.block_size, (
             f"Sequence length {total_len} > block_size {cfg.block_size}"
@@ -168,7 +180,25 @@ class CutileGPT:
             # offset from the length difference.
             if cache is not None:
                 k, v = cache.append(i, k, v)
-            attn_out = cutile_causal_attention(q, k, v, cfg.n_head)
+            attn_out = self.tile_runtime.run(
+                RegionKind.ATTENTION,
+                q,
+                k,
+                v,
+                cfg.n_head,
+                phase=phase,
+                attributes={
+                    "n_head": cfg.n_head,
+                    "n_kv_head": cfg.n_head,
+                    "window": 0,
+                },
+                site="attention.window_0",
+                shape_bucket=(
+                    batch_size,
+                    length_bucket(seq_len),
+                    length_bucket(k.shape[2]),
+                ),
+            )
 
             # Reshape back
             attn_out = cp.transpose(attn_out, (0, 2, 1, 3))
@@ -177,37 +207,44 @@ class CutileGPT:
             attn_out = cp.reshape(attn_out, (batch_size, seq_len, cfg.n_embd))
 
             # Output projection
-            attn_out = cutile_linear_bias(
+            x = self.tile_runtime.run(
+                RegionKind.LINEAR_RESIDUAL,
                 attn_out,
                 self.weights[prefix + 'attn.c_proj.weight'],
+                x,
                 self.weights[prefix + 'attn.c_proj.bias'],
-                self.weight_transposes.get(prefix + 'attn.c_proj.weight')
+                self.weight_transposes.get(prefix + 'attn.c_proj.weight'),
+                phase=phase,
+                attributes={"projection": "attention_output"},
+                site="attention_output",
+                shape_bucket=token_bucket,
             )
-            x = x + attn_out
 
             # MLP
             x_norm = cutile_layer_norm(
                 x, self.weights[prefix + 'ln_2.weight'], self.weights[prefix + 'ln_2.bias']
             )
-            hidden = cutile_linear_bias(
+            x = self.tile_runtime.run(
+                RegionKind.GELU_MLP_RESIDUAL,
                 x_norm,
                 self.weights[prefix + 'mlp.c_fc.weight'],
                 self.weights[prefix + 'mlp.c_fc.bias'],
-                self.weight_transposes.get(prefix + 'mlp.c_fc.weight')
-            )
-            hidden = cutile_gelu(hidden)
-            mlp_out = cutile_linear_bias(
-                hidden,
                 self.weights[prefix + 'mlp.c_proj.weight'],
                 self.weights[prefix + 'mlp.c_proj.bias'],
-                self.weight_transposes.get(prefix + 'mlp.c_proj.weight')
+                phase=phase,
+                attributes={"activation": "gelu", "residual": True},
+                site="gelu_mlp",
+                shape_bucket=token_bucket,
+                residual=x,
+                w_proj_t=self.weight_transposes.get(prefix + 'mlp.c_proj.weight'),
             )
-            x = x + mlp_out
 
         # Final LayerNorm
         x = cutile_layer_norm(x, self.weights['ln_f.weight'], self.weights['ln_f.bias'])
 
         # LM head
+        if last_token_only:
+            x = x[:, -1:, :]
         logits = cutile_linear(x, self.weights['lm_head.weight'],
                                self.weight_transposes.get('lm_head.weight'))
 
@@ -257,7 +294,7 @@ class CutileGPT:
             else:
                 idx_cond = idx[:, -1:]  # then one token per step
 
-            logits, _ = self.forward(idx_cond, cache=cache)
+            logits, _ = self.forward(idx_cond, cache=cache, last_token_only=True)
             logits = logits[:, -1, :] / temperature
 
             if top_k is not None:

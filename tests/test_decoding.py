@@ -11,7 +11,13 @@ import pytest
 cp = pytest.importorskip("cupy")
 torch = pytest.importorskip("torch")
 
-from cutile_gpt import CutileGPT, GPTConfig, KVCache, cutile_causal_attention
+from cutile_gpt import (
+    CutileGPT,
+    GPTConfig,
+    KVCache,
+    capture_forward,
+    cutile_causal_attention,
+)
 
 
 def gpu_available():
@@ -74,6 +80,17 @@ def test_cache_rejects_wrong_shape():
         cache.append(0, kv, kv)
 
 
+def test_attention_rejects_mismatched_batch_and_head_dim():
+    q = to_cupy(torch.randn(1, 4, 8, 64, device="cuda"))
+    wrong_batch = to_cupy(torch.randn(2, 4, 8, 64, device="cuda"))
+    with pytest.raises(ValueError, match="batch sizes differ"):
+        cutile_causal_attention(q, wrong_batch, wrong_batch, 4)
+
+    wrong_dim = to_cupy(torch.randn(1, 4, 8, 32, device="cuda"))
+    with pytest.raises(ValueError, match="head dimensions differ"):
+        cutile_causal_attention(q, wrong_dim, wrong_dim, 4)
+
+
 def test_cache_reset_keeps_buffers():
     cache = KVCache(1, 1, 2, 16, 64)
     kv = to_cupy(torch.randn(1, 2, 4, 64, device="cuda"))
@@ -83,6 +100,20 @@ def test_cache_reset_keeps_buffers():
     cache.reset()
     assert cache.length == 0
     assert cache.nbytes == allocated
+
+
+def test_cuda_graph_replay_matches_eager_for_new_input():
+    model = CutileGPT(GPTConfig.gpt_nano())
+    example = cp.array([[1, 2, 3, 4]], dtype=cp.int32)
+    graph = capture_forward(
+        model, example, warmup=2, forward_kwargs={"last_token_only": True}
+    )
+    other = cp.array([[5, 6, 7, 8]], dtype=cp.int32)
+    got, _ = graph.replay(other, synchronize=True)
+    got = got.copy()
+    expected, _ = model.forward(other, last_token_only=True)
+    cp.cuda.Stream.null.synchronize()
+    assert float(cp.abs(got - expected).max()) == 0.0
 
 
 @pytest.mark.parametrize("window", [32, 64, 128, 256])

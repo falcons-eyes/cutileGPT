@@ -20,15 +20,15 @@ import cupy as cp
 
 from ..kernels import (
     KVCache,
-    cutile_causal_attention,
     cutile_embedding,
     cutile_linear,
     cutile_linear_bias,
     cutile_rms_norm,
-    cutile_rope,
-    cutile_swiglu_mlp,
+    cutile_rope_qk,
     rope_tables,
 )
+from ..planner import ExecutionPhase, RegionKind, length_bucket
+from ..regions import TileRuntime
 from .hf_config import ModelArchitecture, UnsupportedArchitecture, parse_config
 
 
@@ -42,8 +42,35 @@ class TransformerLM:
 
     def __init__(self, arch: ModelArchitecture, weights: dict[str, cp.ndarray]):
         self.arch = arch
-        self.weights = weights
-        self._rope_cache: dict[int, tuple[cp.ndarray, cp.ndarray]] = {}
+        # QKV packing replaces three mapping entries with one. Keep that
+        # bookkeeping private without duplicating the underlying GPU arrays or
+        # surprising callers that reuse/inspect the mapping they passed in.
+        self.weights = dict(weights)
+        self._rope_capacity = 0
+        self._rope_tables: tuple[cp.ndarray, cp.ndarray] | None = None
+        self.tile_runtime = TileRuntime()
+        self._pack_qkv_weights()
+
+    def _pack_qkv_weights(self) -> None:
+        """Pack Q/K/V once so every layer needs one projection launch."""
+        arch = self.arch
+        for i in range(arch.n_layer):
+            p = f"model.layers.{i}.self_attn."
+            names = [p + f"{name}_proj.weight" for name in ("q", "k", "v")]
+            self.weights[p + "qkv_proj.weight"] = cp.concatenate(
+                [self.weights.pop(name) for name in names], axis=0
+            )
+
+            bias_names = [p + f"{name}_proj.bias" for name in ("q", "k", "v")]
+            if any(name in self.weights for name in bias_names):
+                sizes = (arch.attn_dim, arch.kv_dim, arch.kv_dim)
+                dtype = self.weights[p + "qkv_proj.weight"].dtype
+                biases = [
+                    self.weights.pop(name)
+                    if name in self.weights else cp.zeros(size, dtype=dtype)
+                    for name, size in zip(bias_names, sizes, strict=True)
+                ]
+                self.weights[p + "qkv_proj.bias"] = cp.concatenate(biases)
 
     # ---------------------------------------------------------------- loading
 
@@ -200,13 +227,28 @@ class TransformerLM:
     # ---------------------------------------------------------------- forward
 
     def _rope(self, seq_len: int, offset: int):
-        key = (seq_len, offset)
-        if key not in self._rope_cache:
-            self._rope_cache[key] = rope_tables(
-                seq_len, self.arch.head_dim, theta=self.arch.rope_theta,
-                offset=offset, scaling=self.arch.rope_scaling,
+        end = offset + seq_len
+        if end > self._rope_capacity:
+            capacity = max(256, 1 << (end - 1).bit_length())
+            capacity = min(capacity, self.arch.max_position)
+            if capacity < end:
+                raise ValueError(
+                    f"RoPE position {end} exceeds max_position={self.arch.max_position}"
+                )
+            self._rope_tables = rope_tables(
+                capacity,
+                self.arch.head_dim,
+                theta=self.arch.rope_theta,
+                scaling=self.arch.rope_scaling,
             )
-        return self._rope_cache[key]
+            self._rope_capacity = capacity
+        assert self._rope_tables is not None
+        cos, sin = self._rope_tables
+        return cos[offset:end], sin[offset:end]
+
+    def graph_capture_resources(self):
+        """Buffers outside graph allocation whose captured pointers must live."""
+        return () if self._rope_tables is None else self._rope_tables
 
     def _project(self, x: cp.ndarray, prefix: str) -> cp.ndarray:
         """Linear with the bias applied when the checkpoint carries one."""
@@ -220,11 +262,23 @@ class TransformerLM:
         """RMSNorm over head_dim, applied per head before RoPE."""
         return cutile_rms_norm(x, weight, eps=self.arch.rms_eps)
 
-    def forward(self, idx: cp.ndarray, cache: KVCache | None = None) -> cp.ndarray:
-        """Return logits (batch, seq_len, vocab_size)."""
+    def forward(
+        self,
+        idx: cp.ndarray,
+        cache: KVCache | None = None,
+        last_token_only: bool = False,
+    ) -> cp.ndarray:
+        """Return all logits, or only the final position for generation."""
         arch = self.arch
         batch, seq_len = idx.shape
         past = cache.length if cache is not None else 0
+        phase = (
+            ExecutionPhase.DECODE
+            if cache is not None and past > 0
+            else ExecutionPhase.PREFILL
+        )
+        self.tile_runtime.begin_step()
+        token_bucket = (batch, length_bucket(seq_len))
 
         x = cutile_embedding(idx, self.weights["model.embed_tokens.weight"])
         if arch.embed_scale != 1.0:
@@ -240,16 +294,19 @@ class TransformerLM:
                                 unit_offset=arch.norm_unit_offset)
             h2d = cp.reshape(h, (-1, arch.hidden_size))
 
-            q = self._project(h2d, p + "self_attn.q_proj")
-            k = self._project(h2d, p + "self_attn.k_proj")
-            v = self._project(h2d, p + "self_attn.v_proj")
+            qkv = self._project(h2d, p + "self_attn.qkv_proj")
+            q_end = arch.attn_dim
+            k_end = q_end + arch.kv_dim
+            q, k, v = cp.split(qkv, (q_end, k_end), axis=1)
 
             q = cp.reshape(q, (batch, seq_len, arch.n_head, arch.head_dim))
             k = cp.reshape(k, (batch, seq_len, arch.n_kv_head, arch.head_dim))
             v = cp.reshape(v, (batch, seq_len, arch.n_kv_head, arch.head_dim))
 
-            # QK-Norm runs per head on the last axis, before the transpose.
-            if arch.qk_norm:
+            # QK-Norm precedes RoPE. For the common Qwen path, keep that exact
+            # order but execute both heads and both operations in one launch.
+            fused_qk_rope = arch.qk_norm and arch.uses_rope(i)
+            if arch.qk_norm and not fused_qk_rope:
                 q = self._qk_norm(q, self.weights[p + "self_attn.q_norm.weight"])
                 k = self._qk_norm(k, self.weights[p + "self_attn.k_norm.weight"])
 
@@ -257,47 +314,124 @@ class TransformerLM:
             k = cp.ascontiguousarray(k.transpose(0, 2, 1, 3))
             v = cp.ascontiguousarray(v.transpose(0, 2, 1, 3))
 
-            if arch.uses_rope(i):
-                q = cutile_rope(q, cos, sin)
-                k = cutile_rope(k, cos, sin)
+            cache_written = fused_qk_rope and cache is not None
+            if cache_written:
+                k_new = k
+                k_slot, v_slot, k_history, v_history = cache.reserve(i, seq_len)
+                q = self.tile_runtime.run(
+                    RegionKind.QK_NORM_ROPE_CACHE,
+                    q,
+                    k_new,
+                    v,
+                    self.weights[p + "self_attn.q_norm.weight"],
+                    self.weights[p + "self_attn.k_norm.weight"],
+                    cos,
+                    sin,
+                    k_slot,
+                    v_slot,
+                    phase=phase,
+                    attributes={"eps": arch.rms_eps},
+                    mutable_inputs={7: "kv_cache.key", 8: "kv_cache.value"},
+                    site="qk_norm_rope_cache",
+                    shape_bucket=token_bucket,
+                    eps=arch.rms_eps,
+                )
+                k, v = k_history, v_history
+            elif fused_qk_rope:
+                q, k = self.tile_runtime.run(
+                    RegionKind.QK_NORM_ROPE,
+                    q,
+                    k,
+                    self.weights[p + "self_attn.q_norm.weight"],
+                    self.weights[p + "self_attn.k_norm.weight"],
+                    cos,
+                    sin,
+                    phase=phase,
+                    attributes={"eps": arch.rms_eps},
+                    site="qk_norm_rope",
+                    shape_bucket=token_bucket,
+                    eps=arch.rms_eps,
+                )
+            elif arch.uses_rope(i):
+                q, k = cutile_rope_qk(q, k, cos, sin)
 
-            if cache is not None:
+            if cache is not None and not cache_written:
                 k, v = cache.append(i, k, v)
 
-            attn = cutile_causal_attention(
-                q, k, v, arch.n_head, arch.n_kv_head, window=arch.window_for(i))
+            window = arch.window_for(i)
+            attn = self.tile_runtime.run(
+                RegionKind.ATTENTION,
+                q,
+                k,
+                v,
+                arch.n_head,
+                arch.n_kv_head,
+                phase=phase,
+                attributes={
+                    "n_head": arch.n_head,
+                    "n_kv_head": arch.n_kv_head,
+                    "window": window,
+                },
+                site=f"attention.window_{window}",
+                shape_bucket=(
+                    batch,
+                    length_bucket(seq_len),
+                    length_bucket(k.shape[2]),
+                ),
+                window=window,
+            )
             attn = cp.ascontiguousarray(attn.transpose(0, 2, 1, 3))
             attn = cp.reshape(attn, (-1, arch.attn_dim))
 
-            x = x + cp.reshape(
-                self._project(attn, p + "self_attn.o_proj"),
-                (batch, seq_len, arch.hidden_size))
+            o_prefix = p + "self_attn.o_proj"
+            x = self.tile_runtime.run(
+                RegionKind.LINEAR_RESIDUAL,
+                attn,
+                self.weights[o_prefix + ".weight"],
+                x,
+                self.weights.get(o_prefix + ".bias"),
+                phase=phase,
+                attributes={"projection": "attention_output"},
+                site="attention_output",
+                shape_bucket=token_bucket,
+            )
 
             h = cutile_rms_norm(
                 x, self.weights[p + "post_attention_layernorm.weight"],
                 eps=arch.rms_eps, unit_offset=arch.norm_unit_offset)
-            x = x + cutile_swiglu_mlp(
+            x = self.tile_runtime.run(
+                RegionKind.SWIGLU_RESIDUAL,
                 h,
                 self.weights[p + "mlp.gate_proj.weight"],
                 self.weights[p + "mlp.up_proj.weight"],
-                self.weights[p + "mlp.down_proj.weight"])
+                self.weights[p + "mlp.down_proj.weight"],
+                phase=phase,
+                attributes={"activation": "silu", "residual": True},
+                site="swiglu",
+                shape_bucket=token_bucket,
+                residual=x)
 
         x = cutile_rms_norm(x, self.weights["model.norm.weight"],
                             eps=arch.rms_eps, unit_offset=arch.norm_unit_offset)
+        if last_token_only:
+            x = x[:, -1:, :]
 
         head = self.weights.get("lm_head.weight")
         if head is None:
             head = self.weights["model.embed_tokens.weight"]  # tied
+        logits_seq = 1 if last_token_only else seq_len
         return cutile_linear(cp.reshape(x, (-1, arch.hidden_size)), head).reshape(
-            batch, seq_len, arch.vocab_size)
+            batch, logits_seq, arch.vocab_size)
 
     def new_cache(self, batch: int = 1, max_seq_len: int | None = None) -> KVCache:
         arch = self.arch
+        capacity = max_seq_len or min(arch.max_position, 4096)
+        self._rope(1, capacity - 1)
         return KVCache(
             n_layer=arch.n_layer,
             batch=batch,
             n_kv_head=arch.n_kv_head,
-            max_seq_len=max_seq_len or min(arch.max_position, 4096),
+            max_seq_len=capacity,
             head_dim=arch.head_dim,
             dtype=self.weights["model.embed_tokens.weight"].dtype,
         )
