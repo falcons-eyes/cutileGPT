@@ -13,6 +13,7 @@ from .gelu import cutile_gelu
 from .layernorm import cutile_layer_norm
 from .linear import cutile_linear, cutile_linear_bias
 from .rmsnorm import cutile_rms_norm
+from .rope import cutile_rope, rope_tables
 from .swiglu import cutile_swiglu_mlp
 
 __all__ = [
@@ -24,5 +25,7 @@ __all__ = [
     'cutile_causal_attention',
     'cutile_fused_mlp',
     'cutile_rms_norm',
+    'cutile_rope',
+    'rope_tables',
     'cutile_swiglu_mlp',
 ]

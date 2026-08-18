@@ -61,7 +61,9 @@ from .kernels import (
     cutile_linear,
     cutile_linear_bias,
     cutile_rms_norm,
+    cutile_rope,
     cutile_swiglu_mlp,
+    rope_tables,
 )
 
 # =============================================================================
@@ -125,6 +127,8 @@ __all__ = [
     'cutile_causal_attention',
     'cutile_fused_mlp',
     'cutile_rms_norm',
+    'cutile_rope',
+    'rope_tables',
     'cutile_swiglu_mlp',
     # Utils
     'benchmark_cupy',

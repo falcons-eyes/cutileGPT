@@ -17,7 +17,9 @@ from cutile_gpt import (
     cutile_causal_attention,
     cutile_linear,
     cutile_rms_norm,
+    cutile_rope,
     cutile_swiglu_mlp,
+    rope_tables,
 )
 
 
@@ -132,16 +134,82 @@ def test_swiglu_rejects_mismatched_projections():
         cutile_swiglu_mlp(x, gate, up, down)
 
 
+def _hf_rope(x, cos, sin):
+    """HuggingFace takes full-width tables with each half duplicated."""
+    from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
+
+    tc, ts = torch.from_dlpack(cos), torch.from_dlpack(sin)
+    out, _ = apply_rotary_pos_emb(
+        x, x, torch.cat([tc, tc], -1)[None], torch.cat([ts, ts], -1)[None]
+    )
+    return out
+
+
+@pytest.mark.parametrize(
+    "head_dim,theta",
+    [(64, 10000.0), (128, 500000.0)],
+    ids=["llama-theta", "glimmer-theta"],
+)
+def test_rope_matches_huggingface(head_dim, theta):
+    torch.manual_seed(0)
+    seq = 256
+    x = torch.randn(1, 8, seq, head_dim, device="cuda")
+    cos, sin = rope_tables(seq, head_dim, theta=theta)
+
+    got = cutile_rope(to_cupy(x), cos, sin)
+    cp.cuda.Stream.null.synchronize()
+
+    assert (torch.from_dlpack(got) - _hf_rope(x, cos, sin)).abs().max().item() < 1e-5
+
+
+def test_rope_offset_matches_absolute_positions():
+    """Decoding with a cache rotates a new token by its absolute position, not
+    by zero, so an offset run must equal the tail of a full-length run."""
+    head_dim, theta = 128, 500000.0
+    full_cos, full_sin = rope_tables(300, head_dim, theta=theta)
+    off_cos, off_sin = rope_tables(44, head_dim, theta=theta, offset=256)
+
+    assert float(cp.abs(full_cos[256:300] - off_cos).max()) == 0.0
+    assert float(cp.abs(full_sin[256:300] - off_sin).max()) == 0.0
+
+
+def test_rope_shared_between_query_and_key_head_counts():
+    """Under GQA, Q and K have different head counts but one set of tables."""
+    torch.manual_seed(0)
+    head_dim, seq = 128, 256
+    cos, sin = rope_tables(seq, head_dim, theta=500000.0)
+    q = torch.randn(1, 32, seq, head_dim, device="cuda")
+    k = torch.randn(1, 2, seq, head_dim, device="cuda")
+
+    gq = cutile_rope(to_cupy(q), cos, sin)
+    gk = cutile_rope(to_cupy(k), cos, sin)
+    cp.cuda.Stream.null.synchronize()
+
+    assert (torch.from_dlpack(gq) - _hf_rope(q, cos, sin)).abs().max().item() < 1e-5
+    assert (torch.from_dlpack(gk) - _hf_rope(k, cos, sin)).abs().max().item() < 1e-5
+
+
+def test_rope_rejects_odd_head_dim():
+    with pytest.raises(ValueError, match="even"):
+        rope_tables(16, 63)
+
+
+def test_rope_rejects_mismatched_tables():
+    x = to_cupy(torch.randn(1, 4, 128, 64, device="cuda"))
+    cos, sin = rope_tables(64, 64)
+    with pytest.raises(ValueError, match="cos/sin"):
+        cutile_rope(x, cos, sin)
+
+
 def test_muse_glimmer_decoder_layer():
-    """RMSNorm + GQA + SwiGLU composed as a real layer, at Glimmer's shapes.
+    """A complete Glimmer decoder layer: RMSNorm, RoPE, GQA, SwiGLU.
 
     Note hidden (6656) is not n_head * head_dim (4096) - the output projection
-    widens the attention result back up. RoPE is not applied; it is the one
-    primitive still missing, and it does not change the shapes checked here.
+    widens the attention result back up.
     """
     hidden, n_head, n_kv_head, head_dim, intermediate = 6656, 32, 2, 128, 19968
     attn_dim = n_head * head_dim
-    batch, seq, eps = 1, 128, 1e-6
+    batch, seq, eps, theta = 1, 128, 1e-6, 500000.0
 
     torch.manual_seed(0)
     w = {
@@ -171,6 +239,9 @@ def test_muse_glimmer_decoder_layer():
     v = cp.ascontiguousarray(
         cp.reshape(cutile_linear(h2d, cw["v"]), (batch, seq, n_kv_head, head_dim))
         .transpose(0, 2, 1, 3))
+    cos, sin = rope_tables(seq, head_dim, theta=theta)
+    q = cutile_rope(q, cos, sin)
+    k = cutile_rope(k, cos, sin)
     attn = cutile_causal_attention(q, k, v, n_head, n_kv_head)
     attn = cp.ascontiguousarray(attn.transpose(0, 2, 1, 3)).reshape(-1, attn_dim)
     mid = cx + cp.reshape(cutile_linear(attn, cw["o"]), (batch, seq, hidden))
@@ -183,6 +254,8 @@ def test_muse_glimmer_decoder_layer():
     tq = (th2d @ w["q"].T).view(batch, seq, n_head, head_dim).transpose(1, 2)
     tk = (th2d @ w["k"].T).view(batch, seq, n_kv_head, head_dim).transpose(1, 2)
     tv = (th2d @ w["v"].T).view(batch, seq, n_kv_head, head_dim).transpose(1, 2)
+    tq = _hf_rope(tq, cos, sin)
+    tk = _hf_rope(tk, cos, sin)
     tattn = torch.nn.functional.scaled_dot_product_attention(
         tq, tk, tv, is_causal=True, enable_gqa=True)
     tattn = tattn.transpose(1, 2).reshape(-1, attn_dim)

@@ -242,17 +242,29 @@ three. Those replacements are kernels here too:
 | Primitive | GPT-2 | Modern | cutileGPT |
 |-----------|-------|--------|-----------|
 | Normalization | LayerNorm | RMSNorm | `cutile_rms_norm` |
+| Position | learned | RoPE | `cutile_rope` |
 | Attention | MHA | GQA | `cutile_causal_attention(..., n_kv_head=)` |
 | MLP | GELU | SwiGLU | `cutile_swiglu_mlp` |
-| Position | learned | RoPE | not yet |
 
 ```python
-from cutile_gpt import cutile_rms_norm, cutile_causal_attention, cutile_swiglu_mlp
+from cutile_gpt import (
+    cutile_causal_attention, cutile_rms_norm, cutile_rope,
+    cutile_swiglu_mlp, rope_tables,
+)
 
 h = cutile_rms_norm(x, ln_weight, eps=1e-6)          # no mean, no bias
+
+cos, sin = rope_tables(seq_len, head_dim, theta=500_000)
+q, k = cutile_rope(q, cos, sin), cutile_rope(k, cos, sin)
+
 attn = cutile_causal_attention(q, k, v, n_head=32, n_kv_head=2)
 out = cutile_swiglu_mlp(h, gate_proj, up_proj, down_proj)
 ```
+
+RoPE follows the HuggingFace half-split convention, so it matches Llama, Qwen3,
+Gemma, and Glimmer directly. `theta` is the base - 10000 originally, raised by
+long-context models - and `rope_tables(..., offset=)` rotates by absolute
+position, which is what decoding from a cache needs.
 
 `cutile_rms_norm(..., unit_offset=True)` scales by `1 + weight`, which is how
 Gemma stores its norm weights.
@@ -270,13 +282,14 @@ to plain MHA. The KV cache shrinks by the ratio: 4x at Qwen3's 32/8, 16x at Muse
 Glimmer's 32/2. Writing this by hand in CUDA would mean redoing thread indexing,
 shared-memory layout, and synchronization; declaratively it is an index change.
 
-A Muse Glimmer-shaped decoder layer (hidden 6656, 32/2 heads, head_dim 128,
-intermediate 19968 - 457M parameters) composed from these kernels matches
-PyTorch to 9.1e-04 relative. `cutile_linear` is bit-identical to torch's TF32
-matmul, so that residual is TF32 precision, not kernel error. See
-`tests/test_modern_arch.py`.
+A complete Muse Glimmer decoder layer - hidden 6656, 32/2 heads, head_dim 128,
+intermediate 19968, RoPE base 500000, 457M parameters - composed from these
+kernels matches PyTorch to **8.4e-04 relative**. `cutile_linear` is
+bit-identical to torch's TF32 matmul, so that residual is TF32 precision, not
+kernel error. See `tests/test_modern_arch.py`.
 
-RoPE is the remaining gap before a full modern layer runs end to end.
+Still missing for end-to-end inference on a real checkpoint: a safetensors
+loader, a KV cache, and sliding-window attention.
 
 ---
 
