@@ -64,4 +64,4 @@
 - 렌더링 에러 발생 시 코드를 수정하고 4단계부터 재시도
 - 사용자 피드백이 있으면 3단계부터 수정
 - manim_skill 베스트 프랙티스: `external/manim_skill/skills/manimce-best-practices/`
-- 가상환경: `/home/hwoo_joo/thirdparty/manim_skill/.venv/`
+- 가상환경: 프로젝트 루트의 `.venv/` (`source .venv/bin/activate`)
