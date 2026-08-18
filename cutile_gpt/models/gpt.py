@@ -22,6 +22,20 @@ from ..kernels import (
 from .config import GPTConfig
 
 
+def _torch_to_cupy(tensor):
+    """Move a torch weight onto the GPU as a CuPy array, preserving its dtype.
+
+    Goes through DLPack rather than `cp.asarray(t.cpu().numpy())`. numpy has no
+    bfloat16, so the old route raised "Got unsupported ScalarType BFloat16" on
+    every current open-weight checkpoint - GPT-2 only worked because it ships
+    fp32. DLPack hands the buffer over directly, which also skips the round trip
+    through host memory.
+    """
+    import cupy as cp
+
+    return cp.from_dlpack(tensor.detach().contiguous().cuda())
+
+
 class CutileGPT:
     """
     GPT model using cutile kernels for inference.
@@ -250,8 +264,7 @@ class CutileGPT:
         hf_model = GPT2LMHeadModel.from_pretrained(model_name)
         sd = hf_model.state_dict()
 
-        def to_cupy(tensor):
-            return cp.asarray(tensor.detach().cpu().numpy())
+        to_cupy = _torch_to_cupy
 
         def transpose_contiguous(w):
             w_t = cp.transpose(w)
@@ -313,8 +326,7 @@ class CutileGPT:
         """
         sd = mingpt_model.state_dict()
 
-        def to_cupy(tensor):
-            return cp.asarray(tensor.detach().cpu().numpy())
+        to_cupy = _torch_to_cupy
 
         self.weights['wte'] = to_cupy(sd['transformer.wte.weight'])
         self.weights['wpe'] = to_cupy(sd['transformer.wpe.weight'])

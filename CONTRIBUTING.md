@@ -60,6 +60,20 @@ Tests under `tests/` need a Blackwell GPU and are not run by CI:
 uv run pytest
 ```
 
+`tests/test_dtypes.py` is the exception - its dtype and loader cases run without
+a GPU and skip the kernel cases automatically.
+
+## A note on dtypes
+
+Kernels take the dtype of the arrays passed to them; none of them hardcode
+float32. Keep it that way - accumulate in fp32 internally and store back with
+`.astype(Out.dtype)`, and a kernel written for float32 handles bfloat16 for
+free. That is what makes porting to a real checkpoint cheap.
+
+Load weights with `cp.from_dlpack(tensor.contiguous().cuda())`, never
+`cp.asarray(tensor.numpy())` - numpy has no bfloat16, and every current
+open-weight model ships in it.
+
 ## Reporting a bug
 
 Please include GPU model, `nvidia-smi` driver version, CUDA Toolkit version, and

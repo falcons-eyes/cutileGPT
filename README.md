@@ -233,6 +233,43 @@ generated = model.generate(tokens, max_new_tokens=50)
 
 ---
 
+## 🎯 Precision
+
+Kernels carry the dtype of the arrays handed to them - `float32`, `float16`, and
+`bfloat16` all work with no kernel changes, accumulating in fp32 internally and
+storing back in the input dtype.
+
+| dtype | GELU | LayerNorm | Attention |
+|-------|------|-----------|-----------|
+| `float32` | 0.0 | 7.2e-07 | 1.4e-06 |
+| `float16` | 2.0e-03 | 1.8e-03 | 9.1e-04 |
+| `bfloat16` | 8.9e-03 | 1.5e-02 | 7.4e-03 |
+
+<sub>Max absolute error vs PyTorch on unit-scale activations, NVIDIA GB10. The
+bfloat16 row reflects its 8-bit mantissa, not kernel error.</sub>
+
+**bfloat16 matters because that is what open-weight checkpoints ship in.** Two
+floors are needed to reach it: `ml-dtypes` registers the numpy dtype so
+`cp.dtype("bfloat16")` resolves, and cupy 14 is the first release whose
+`from_dlpack` accepts a bfloat16 tensor. Both are declared as core dependencies.
+
+Load weights straight from a torch checkpoint without going through numpy - the
+dtype survives and the buffer never round-trips through host memory:
+
+```python
+import cupy as cp, torch
+from transformers import GPT2LMHeadModel
+
+hf = GPT2LMHeadModel.from_pretrained('gpt2', dtype=torch.bfloat16)
+w = cp.from_dlpack(hf.state_dict()['transformer.wte.weight'].contiguous().cuda())
+# w.dtype -> bfloat16, half the memory of fp32
+```
+
+`cuda.tile` also compiles `float8_e4m3fn` and `float8_e5m2`. cupy cannot import
+those over DLPack yet, so pass the torch tensor to `ct.launch` directly.
+
+---
+
 ## 🔧 Installation
 
 ### Prerequisites
@@ -241,6 +278,10 @@ generated = model.generate(tokens, max_new_tokens=50)
 - **CUDA Toolkit 13.1+** - required by `tileiras`, the Tile IR compiler
 - **NVIDIA Driver r580+**
 - **NVIDIA Blackwell GPU** - `sm_100` (B200/GB200) or `sm_120` (GB10, RTX 50 series)
+
+Core dependencies (`cuda-tile`, `cupy-cuda13x`, `ml-dtypes`, `numpy`) install
+automatically. cupy 14 and ml_dtypes are both required for bfloat16 - see
+[Precision](#-precision).
 
 > `tileiras` currently compiles for Blackwell only, so Hopper (`sm_90`) and
 > earlier are not supported yet. Upstream lists this as a temporary

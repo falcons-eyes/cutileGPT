@@ -32,12 +32,20 @@ classifiers = [
 ]
 
 # Core dependencies only - minimal for cutile kernels.
+#
 # cuda-tile provides the `cuda.tile` module every kernel imports, and tileiras
 # (its compiler) requires the CUDA 13.1+ toolchain, so cupy must be a cuda13
 # build - a cuda12 build cannot load kernels built by it.
+#
+# bfloat16 is what every current open-weight model ships in, and reaching it
+# takes both of the floors below: ml_dtypes registers the numpy dtype so
+# `cp.dtype("bfloat16")` resolves, and cupy 14 is the first release whose
+# `from_dlpack` accepts a bfloat16 tensor (13.x raises NotImplementedError).
+# The kernels themselves are already dtype-generic - none of them changed.
 dependencies = [
-    "cuda-tile>=1.0.1",
-    "cupy-cuda13x>=13.6.0",
+    "cuda-tile>=1.5.0",
+    "cupy-cuda13x>=14.0.0",
+    "ml-dtypes>=0.5.0",
     "numpy>=2.0.0",
 ]
 
@@ -123,6 +131,8 @@ ignore = ["E501"]
 "cutile_deepdive.py" = ["F403", "F405"]
 # Scripts bootstrap sys.path for the minGPT submodule before importing.
 "scripts/comprehensive_comparison.py" = ["E402"]
+# pytest.importorskip has to run before the imports it guards.
+"tests/test_dtypes.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

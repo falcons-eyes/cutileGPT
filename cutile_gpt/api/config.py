@@ -24,13 +24,27 @@ class DType(Enum):
     BFLOAT16 = auto()
 
     def to_cupy(self):
+        """Resolve to the matching CuPy dtype.
+
+        Resolved one branch at a time on purpose. Building a dict of all three
+        would evaluate `cp.dtype("bfloat16")` on every call, and that raises
+        TypeError unless ml_dtypes has registered the dtype - which used to
+        take FLOAT32 and FLOAT16 down with it.
+        """
         import cupy as cp
-        mapping = {
-            DType.FLOAT32: cp.float32,
-            DType.FLOAT16: cp.float16,
-            DType.BFLOAT16: cp.dtype('bfloat16'),
-        }
-        return mapping[self]
+
+        if self is DType.FLOAT32:
+            return cp.float32
+        if self is DType.FLOAT16:
+            return cp.float16
+        try:
+            return cp.dtype('bfloat16')
+        except TypeError as exc:
+            raise RuntimeError(
+                "bfloat16 is unavailable: ml_dtypes must be installed to register "
+                "the numpy dtype. It is a core dependency, so this usually means "
+                "a partial install - try `pip install --force-reinstall cutile-gpt`."
+            ) from exc
 
 
 @dataclass
