@@ -9,6 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
+# Secrets (PyPI publish token, etc.)
+.env
+.env.*
+!.env.example
+
 # Profiling files
 *.nsys-rep
 *.ncu-rep
@@ -45,3 +50,7 @@ CMakeFiles/
 
 # External dependencies (not submodules)
 external/llvm-project/
+
+# Manim render output (regenerate with `manim -qm -a <file>.py`)
+media/
+*.mp4

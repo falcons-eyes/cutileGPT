@@ -7,3 +7,6 @@
 [submodule "external/cuda-tile"]
 	path = external/cuda-tile
 	url = https://github.com/NVIDIA/cuda-tile.git
+[submodule "external/manim_skill"]
+	path = external/manim_skill
+	url = https://github.com/adithya-s-k/manim_skill.git
