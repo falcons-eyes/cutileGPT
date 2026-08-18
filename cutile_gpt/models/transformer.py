@@ -158,7 +158,7 @@ class TransformerLM:
         if key not in self._rope_cache:
             self._rope_cache[key] = rope_tables(
                 seq_len, self.arch.head_dim, theta=self.arch.rope_theta,
-                offset=offset,
+                offset=offset, scaling=self.arch.rope_scaling,
             )
         return self._rope_cache[key]
 

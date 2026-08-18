@@ -75,12 +75,36 @@ def rope_kernel(X, Cos, Sin, Out, N_HEAD: ConstInt, TILE_M: ConstInt,
              tile=out2.reshape((1, 1, TILE_M, HALF_DIM)).astype(Out.dtype))
 
 
+def llama3_scale(inv_freq: cp.ndarray, factor: float, low_freq_factor: float,
+                 high_freq_factor: float, original_context: int) -> cp.ndarray:
+    """Stretch the low-frequency end of the RoPE spectrum, Llama 3 style.
+
+    Llama 3.1 onward extend context by dividing the slow-turning components -
+    the ones whose wavelength already exceeds the original training window - by
+    `factor`, leaving the fast ones alone and interpolating between. Ignoring
+    this does not fail loudly: the model still runs and still reads fluently,
+    it just picks a different token perhaps one time in six.
+    """
+    wavelen = 2 * cp.pi / inv_freq
+    low_wavelen = original_context / low_freq_factor
+    high_wavelen = original_context / high_freq_factor
+
+    scaled = inv_freq / factor
+    smooth = ((original_context / wavelen - low_freq_factor)
+              / (high_freq_factor - low_freq_factor))
+    blended = (1 - smooth) * scaled + smooth * inv_freq
+
+    out = cp.where(wavelen > low_wavelen, scaled, blended)
+    return cp.where(wavelen < high_wavelen, inv_freq, out)
+
+
 def rope_tables(
     seq_len: int,
     head_dim: int,
     theta: float = 10000.0,
     offset: int = 0,
     dtype=cp.float32,
+    scaling: dict | None = None,
 ) -> tuple[cp.ndarray, cp.ndarray]:
     """
     Build the cos/sin tables for a run of positions.
@@ -94,6 +118,9 @@ def rope_tables(
         offset: Absolute index of the first position. Non-zero when decoding
             with a cache, where the new token is not at position 0.
         dtype: dtype of the returned tables
+        scaling: A checkpoint's `rope_scaling` block. Only `rope_type: llama3`
+            is understood; anything else raises rather than being ignored,
+            since a wrong frequency table produces plausible wrong tokens.
 
     Returns:
         (cos, sin), each (seq_len, head_dim // 2)
@@ -104,6 +131,22 @@ def rope_tables(
     half = head_dim // 2
     # inv_freq[i] = 1 / theta^(2i/head_dim)
     inv_freq = 1.0 / (theta ** (cp.arange(0, half, dtype=cp.float64) * 2.0 / head_dim))
+
+    if scaling:
+        rope_type = scaling.get("rope_type") or scaling.get("type")
+        if rope_type != "llama3":
+            raise ValueError(
+                f"rope_scaling type {rope_type!r} is not implemented; "
+                "refusing to silently use unscaled frequencies"
+            )
+        inv_freq = llama3_scale(
+            inv_freq,
+            factor=float(scaling["factor"]),
+            low_freq_factor=float(scaling["low_freq_factor"]),
+            high_freq_factor=float(scaling["high_freq_factor"]),
+            original_context=int(scaling["original_max_position_embeddings"]),
+        )
+
     pos = cp.arange(offset, offset + seq_len, dtype=cp.float64)
     freqs = pos[:, None] * inv_freq[None, :]
     return (cp.ascontiguousarray(cp.cos(freqs).astype(dtype)),

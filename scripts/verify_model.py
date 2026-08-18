@@ -39,6 +39,10 @@ def main() -> int:
     ap.add_argument("model")
     ap.add_argument("--no-download", action="store_true")
     ap.add_argument("--tokens", type=int, default=16, help="tokens to generate")
+    ap.add_argument("--fp32", action="store_true",
+                    help="run both sides in float32. Llama-family models carry "
+                         "activations around 400, where one bfloat16 ulp is ~2 - "
+                         "use this to separate a precision gap from a real one")
     args = ap.parse_args()
 
     import cupy as cp
@@ -59,7 +63,11 @@ def main() -> int:
     print(f"{args.model}\n  {model}")
 
     tok = AutoTokenizer.from_pretrained(path)
-    hf = AutoModelForCausalLM.from_pretrained(path, dtype=torch.bfloat16).cuda().eval()
+    dtype = torch.float32 if args.fp32 else torch.bfloat16
+    hf = AutoModelForCausalLM.from_pretrained(path, dtype=dtype).cuda().eval()
+    if args.fp32:
+        model.weights = {k: v.astype(cp.float32) for k, v in model.weights.items()}
+        print("  running both sides in float32")
 
     failures = 0
     for prompt in PROMPTS:
@@ -107,6 +115,9 @@ def main() -> int:
         failures += 1
     print(f"  -> {texts[0]!r}")
 
+    if failures and not args.fp32:
+        print("\n  argmax disagreed in bfloat16. Re-run with --fp32: if that "
+              "passes, the gap is precision on large activations, not logic.")
     print(f"\n{'PASS' if not failures else f'FAIL ({failures})'}")
     return 1 if failures else 0
 

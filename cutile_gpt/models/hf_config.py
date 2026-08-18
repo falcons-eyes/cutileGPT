@@ -43,6 +43,7 @@ class ModelArchitecture:
     norm_unit_offset: bool = False
     layer_windows: list[int] = field(default_factory=list)
     rope_layers: list[bool] = field(default_factory=list)
+    rope_scaling: dict | None = None
 
     @property
     def attn_dim(self) -> int:
@@ -71,6 +72,8 @@ class ModelArchitecture:
                 f"head_dim {self.head_dim}", f"theta {self.rope_theta:g}"]
         if self.qk_norm:
             bits.append("QK-Norm")
+        if self.rope_scaling:
+            bits.append(f"rope_scaling {self.rope_scaling.get('rope_type')}")
         if self.sliding_window:
             bits.append(f"window {self.sliding_window}")
         return f"{self.model_type}: " + ", ".join(bits)
@@ -162,6 +165,19 @@ def parse_config(config: dict | str | Path) -> ModelArchitecture:
             "config states no RoPE base; refusing to assume one"
         )
 
+    # Llama 3.1 onward remap the low-frequency end to extend context. Ignoring
+    # it runs and reads fine while picking a different token roughly one time
+    # in six, so anything but the shape we implement is refused.
+    rope_scaling = t.get("rope_scaling") or None
+    if rope_scaling:
+        kind = rope_scaling.get("rope_type") or rope_scaling.get("type")
+        if kind not in ("llama3", "default"):
+            raise UnsupportedArchitecture(
+                f"rope_scaling type {kind!r} is not implemented"
+            )
+        if kind == "default":
+            rope_scaling = None
+
     if t.get("partial_rotary_factor", 1.0) != 1.0:
         raise UnsupportedArchitecture(
             f"partial_rotary_factor {t['partial_rotary_factor']} rotates only "
@@ -218,4 +234,5 @@ def parse_config(config: dict | str | Path) -> ModelArchitecture:
         norm_unit_offset=is_gemma,
         layer_windows=layer_windows,
         rope_layers=rope_layers,
+        rope_scaling=rope_scaling,
     )

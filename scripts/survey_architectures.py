@@ -36,9 +36,13 @@ MODELS = [
     "Qwen/Qwen3-Coder-30B-A3B-Instruct",
     "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16",
     "zai-org/GLM-4.5-Air",
-    # smaller members of the same families, for numeric verification
+    # smaller models used to verify the loader numerically against transformers
     "Qwen/Qwen3-14B",
     "Qwen/Qwen3-0.6B",
+    "Qwen/Qwen3-Reranker-0.6B",
+    "Qwen/Qwen2.5-0.5B-Instruct",
+    "unsloth/Llama-3.2-1B-Instruct",
+    "HuggingFaceTB/SmolLM2-360M-Instruct",
     "google/gemma-3-4b-it",
     "meta-llama/Llama-3.2-1B",
 ]

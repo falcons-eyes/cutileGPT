@@ -38,20 +38,46 @@ changed all four. Those replacements are kernels here:
 | Long context | - | sliding window | `cutile_causal_attention(window=)` |
 | Decoding | - | KV cache | `KVCache` |
 | Weights | fp32 | bfloat16 | native, no conversion |
+| Attention bias | yes | usually none | applied when present |
+| RoPE scaling | - | Llama 3 long context | `rope_scaling` honored |
 
 Composed, they reproduce a **Muse Glimmer decoder layer** - hidden 6656, 32
 query heads over 2 KV heads, head_dim 128, intermediate 19968, RoPE base
 500000, 457M parameters - to **8.4e-04 relative** against PyTorch, which is TF32
 precision rather than kernel error.
 
-**What is not here yet:** a loader that reads `safetensors` and a `config.json`
-directly. Weights currently come in through `transformers`, and the only
-end-to-end model wired up is GPT-2. The kernels a Qwen3 or Glimmer layer needs
-all exist and are tested; assembling a full model from a downloaded checkpoint
-is the next step, not a finished one.
+### Running a checkpoint
 
-MoE routing (DeepSeek V4, Kimi) and MLA are not implemented - those models are
-also far past what a single GPU holds.
+`TransformerLM` reads a HuggingFace `config.json` and assembles these kernels to
+match it, rather than hardcoding one graph:
+
+```python
+from huggingface_hub import snapshot_download
+from cutile_gpt.models.transformer import TransformerLM
+
+model = TransformerLM.from_pretrained(snapshot_download("Qwen/Qwen3-0.6B"))
+logits = model.forward(token_ids)          # bfloat16 in, bfloat16 out
+```
+
+Five checkpoints across three families - Qwen3, Qwen2, and Llama - have been
+run end to end and agree with `transformers` on the argmax at every position.
+Six more load, including Muse Glimmer 30B, Qwen3-32B, Mistral Small 24B, and
+Yi-1.5-34B. [docs/MODELS.md](docs/MODELS.md) has the table and
+the reasons behind each refusal; regenerate it with
+`scripts/survey_architectures.py` and check one yourself with:
+
+```bash
+uv run python scripts/verify_model.py Qwen/Qwen3-0.6B
+```
+
+The loader refuses rather than guesses. A checkpoint field it does not
+understand - a RoPE scaling rule, a per-layer head_dim, a bias tensor it would
+not apply - raises, because ignoring one produces fluent wrong output rather
+than an error.
+
+**Not implemented:** MoE routing (Qwen3-30B-A3B, DeepSeek V4, Kimi), Mamba
+hybrids (Nemotron 3), partial rotary embeddings (GLM-4-32B, Qwen3.8-27B), and
+per-layer-type shapes (Gemma 4).
 
 ---
 

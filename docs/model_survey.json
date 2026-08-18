@@ -27,7 +27,9 @@
     "quantized": false,
     "multimodal": true,
     "supported": "yes",
-    "note": "GQA 32/2, window 2048, text path only"
+    "note": "GQA 32/2, window 2048, text path only",
+    "parser": "ok",
+    "parser_note": "muse_glimmer: 52L, 6656d, GQA 32/2, head_dim 128, theta 500000, window 2048"
   },
   "Qwen/Qwen3-32B": {
     "model_type": "qwen3",
@@ -57,7 +59,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 64/8, QK-Norm"
+    "note": "GQA 64/8, QK-Norm",
+    "parser": "ok",
+    "parser_note": "qwen3: 64L, 5120d, GQA 64/8, head_dim 128, theta 1e+06, QK-Norm"
   },
   "Qwen/Qwen3.8-27B": {
     "model_type": "qwen3_5",
@@ -87,7 +91,9 @@
     "quantized": false,
     "multimodal": true,
     "supported": "yes",
-    "note": "GQA 24/4, text path only"
+    "note": "GQA 24/4, text path only",
+    "parser": "refused",
+    "parser_note": "partial_rotary_factor 0.25 rotates only part of each head; not implemented"
   },
   "google/gemma-3-27b-it": {
     "error": "gated"
@@ -120,7 +126,9 @@
     "quantized": false,
     "multimodal": true,
     "supported": "yes",
-    "note": "GQA 32/16, window 1024, text path only"
+    "note": "GQA 32/16, window 1024, text path only",
+    "parser": "refused",
+    "parser_note": "per-layer-type RoPE parameters (['full_attention', 'sliding_attention']) are not implemented; this model applies a different base per layer type"
   },
   "mistralai/Mistral-Small-24B-Instruct-2501": {
     "model_type": "mistral",
@@ -150,7 +158,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 32/8"
+    "note": "GQA 32/8",
+    "parser": "ok",
+    "parser_note": "mistral: 40L, 5120d, GQA 32/8, head_dim 128, theta 1e+08"
   },
   "zai-org/GLM-4-32B-0414": {
     "model_type": "glm4",
@@ -180,7 +190,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 48/2"
+    "note": "GQA 48/2",
+    "parser": "refused",
+    "parser_note": "partial_rotary_factor 0.5 rotates only part of each head; not implemented"
   },
   "01-ai/Yi-1.5-34B-Chat": {
     "model_type": "llama",
@@ -210,7 +222,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 56/8"
+    "note": "GQA 56/8",
+    "parser": "ok",
+    "parser_note": "llama: 60L, 7168d, GQA 56/8, head_dim 128, theta 5e+06"
   },
   "CohereLabs/c4ai-command-r-v01": {
     "error": "gated"
@@ -243,7 +257,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 40/10"
+    "note": "GQA 40/10",
+    "parser": "ok",
+    "parser_note": "phi3: 40L, 5120d, GQA 40/10, head_dim 128, theta 250000"
   },
   "Qwen/Qwen3-30B-A3B": {
     "model_type": "qwen3_moe",
@@ -273,7 +289,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "no",
-    "note": "MoE routing (128 experts) not implemented"
+    "note": "MoE routing (128 experts) not implemented",
+    "parser": "refused",
+    "parser_note": "MoE routing (128 experts) is not implemented"
   },
   "Qwen/Qwen3-Coder-30B-A3B-Instruct": {
     "model_type": "qwen3_moe",
@@ -303,7 +321,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "no",
-    "note": "MoE routing (128 experts) not implemented"
+    "note": "MoE routing (128 experts) not implemented",
+    "parser": "refused",
+    "parser_note": "MoE routing (128 experts) is not implemented"
   },
   "nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-BF16": {
     "model_type": "nemotron_h",
@@ -333,7 +353,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "no",
-    "note": "Mamba/attention hybrid + MoE (128 experts); needs state-space layers"
+    "note": "Mamba/attention hybrid + MoE (128 experts); needs state-space layers",
+    "parser": "refused",
+    "parser_note": "MoE routing (128 experts) is not implemented"
   },
   "zai-org/GLM-4.5-Air": {
     "model_type": "glm4_moe",
@@ -363,7 +385,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "no",
-    "note": "MoE routing (128 experts) not implemented"
+    "note": "MoE routing (128 experts) not implemented",
+    "parser": "refused",
+    "parser_note": "MoE routing (128 experts) is not implemented"
   },
   "Qwen/Qwen3-14B": {
     "model_type": "qwen3",
@@ -393,7 +417,9 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 40/8, QK-Norm"
+    "note": "GQA 40/8, QK-Norm",
+    "parser": "ok",
+    "parser_note": "qwen3: 40L, 5120d, GQA 40/8, head_dim 128, theta 1e+06, QK-Norm"
   },
   "Qwen/Qwen3-0.6B": {
     "model_type": "qwen3",
@@ -423,7 +449,137 @@
     "quantized": false,
     "multimodal": false,
     "supported": "yes",
-    "note": "GQA 16/8, QK-Norm"
+    "note": "GQA 16/8, QK-Norm",
+    "parser": "ok",
+    "parser_note": "qwen3: 28L, 1024d, GQA 16/8, head_dim 128, theta 1e+06, QK-Norm"
+  },
+  "Qwen/Qwen3-Reranker-0.6B": {
+    "model_type": "qwen3",
+    "qk_norm": true,
+    "architectures": [
+      "Qwen3ForCausalLM"
+    ],
+    "layers": 28,
+    "hidden": 1024,
+    "n_head": 16,
+    "n_kv_head": 8,
+    "head_dim": 128,
+    "intermediate": 3072,
+    "vocab": 151669,
+    "context": 40960,
+    "rope_theta": 1000000,
+    "rms_eps": 1e-06,
+    "activation": "silu",
+    "gated_mlp": true,
+    "gqa": true,
+    "moe": false,
+    "n_expert": 0,
+    "hybrid": false,
+    "layer_pattern": null,
+    "sliding_window": null,
+    "dtype": "bfloat16",
+    "quantized": false,
+    "multimodal": false,
+    "supported": "yes",
+    "note": "GQA 16/8, QK-Norm",
+    "parser": "ok",
+    "parser_note": "qwen3: 28L, 1024d, GQA 16/8, head_dim 128, theta 1e+06, QK-Norm"
+  },
+  "Qwen/Qwen2.5-0.5B-Instruct": {
+    "model_type": "qwen2",
+    "qk_norm": false,
+    "architectures": [
+      "Qwen2ForCausalLM"
+    ],
+    "layers": 24,
+    "hidden": 896,
+    "n_head": 14,
+    "n_kv_head": 2,
+    "head_dim": null,
+    "intermediate": 4864,
+    "vocab": 151936,
+    "context": 32768,
+    "rope_theta": 1000000.0,
+    "rms_eps": 1e-06,
+    "activation": "silu",
+    "gated_mlp": true,
+    "gqa": true,
+    "moe": false,
+    "n_expert": 0,
+    "hybrid": false,
+    "layer_pattern": null,
+    "sliding_window": null,
+    "dtype": "bfloat16",
+    "quantized": false,
+    "multimodal": false,
+    "supported": "yes",
+    "note": "GQA 14/2",
+    "parser": "ok",
+    "parser_note": "qwen2: 24L, 896d, GQA 14/2, head_dim 64, theta 1e+06"
+  },
+  "unsloth/Llama-3.2-1B-Instruct": {
+    "model_type": "llama",
+    "qk_norm": false,
+    "architectures": [
+      "LlamaForCausalLM"
+    ],
+    "layers": 16,
+    "hidden": 2048,
+    "n_head": 32,
+    "n_kv_head": 8,
+    "head_dim": 64,
+    "intermediate": 8192,
+    "vocab": 128256,
+    "context": 131072,
+    "rope_theta": 500000.0,
+    "rms_eps": 1e-05,
+    "activation": "silu",
+    "gated_mlp": true,
+    "gqa": true,
+    "moe": false,
+    "n_expert": 0,
+    "hybrid": false,
+    "layer_pattern": null,
+    "sliding_window": null,
+    "dtype": "bfloat16",
+    "quantized": false,
+    "multimodal": false,
+    "supported": "yes",
+    "note": "GQA 32/8",
+    "parser": "ok",
+    "parser_note": "llama: 16L, 2048d, GQA 32/8, head_dim 64, theta 500000, rope_scaling llama3"
+  },
+  "HuggingFaceTB/SmolLM2-360M-Instruct": {
+    "model_type": "llama",
+    "qk_norm": false,
+    "architectures": [
+      "LlamaForCausalLM"
+    ],
+    "layers": 32,
+    "hidden": 960,
+    "n_head": 15,
+    "n_kv_head": 5,
+    "head_dim": null,
+    "intermediate": 2560,
+    "vocab": 49152,
+    "context": 8192,
+    "rope_theta": 100000,
+    "rms_eps": 1e-05,
+    "activation": "silu",
+    "gated_mlp": true,
+    "gqa": true,
+    "moe": false,
+    "n_expert": 0,
+    "hybrid": false,
+    "layer_pattern": null,
+    "sliding_window": null,
+    "dtype": "bfloat16",
+    "quantized": false,
+    "multimodal": false,
+    "supported": "yes",
+    "note": "GQA 15/5",
+    "parser": "ok",
+    "parser_note": "llama: 32L, 960d, GQA 15/5, head_dim 64, theta 100000"
   },
   "google/gemma-3-4b-it": {
     "error": "gated"
