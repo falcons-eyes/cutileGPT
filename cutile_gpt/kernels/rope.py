@@ -149,7 +149,10 @@ def cutile_rope(
 
     out = cp.empty_like(x)
 
-    tile_m = min(64, seq_len)
+    # cutile requires power-of-two tile dimensions, and a prompt is rarely a
+    # nice length. Loads pad with zeros and stores clip at the array bound, so
+    # a fixed tile covering the tail costs a few idle lanes and nothing else.
+    tile_m = 64
     grid_m = (seq_len + tile_m - 1) // tile_m
 
     ct.launch(cp.cuda.get_current_stream(), (grid_m, batch * n_head, 1),

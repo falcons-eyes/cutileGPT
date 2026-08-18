@@ -70,7 +70,11 @@ def swiglu_mlp_kernel(
 
         w_down_tile = ct.load(W_down, index=(bid_n, h), shape=(TN, TK),
                               padding_mode=PAD_ZERO)
-        acc = ct.mma(hidden, ct.transpose(w_down_tile), acc)
+        # SwiGLU is computed in fp32, but mma needs both operands in the same
+        # dtype - with a bfloat16 checkpoint the weight tile is bf16, so the
+        # activations come back down to meet it.
+        acc = ct.mma(hidden.astype(w_down_tile.dtype),
+                     ct.transpose(w_down_tile), acc)
 
     ct.store(Y, index=(bid_m, bid_n), tile=acc.astype(Y.dtype))
 

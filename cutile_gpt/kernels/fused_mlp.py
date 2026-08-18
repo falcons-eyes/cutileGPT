@@ -98,7 +98,10 @@ def fused_mlp_kernel(
         w_proj_tile = ct.load(W_proj, index=(bid_n, h), shape=(TN, TK),
                              padding_mode=ct.PaddingMode.ZERO)
         # hidden_gelu: (TM, TK) @ w_proj_tile^T: (TK, TN) -> (TM, TN)
-        acc = ct.mma(hidden_gelu, ct.transpose(w_proj_tile), acc)
+        # GELU runs in fp32; mma needs matching operand dtypes, so the
+        # activations meet the weight tile rather than the other way round.
+        acc = ct.mma(hidden_gelu.astype(w_proj_tile.dtype),
+                     ct.transpose(w_proj_tile), acc)
 
     # Add bias for output projection
     b_proj_tile = ct.load(B_proj, index=(bid_n,), shape=(TN,),

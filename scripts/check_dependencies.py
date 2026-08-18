@@ -29,7 +29,8 @@ DIST_TO_MODULE = {
 
 # Imported inside a function or try block, guarded by a clear error message,
 # and provided by an optional extra rather than the core install.
-LAZY_OPTIONAL = {"transformers", "torch", "datasets", "tiktoken"}
+LAZY_OPTIONAL = {"transformers", "torch", "datasets", "tiktoken",
+                 "safetensors", "huggingface_hub"}
 
 
 def declared_modules(pyproject: dict) -> set[str]:

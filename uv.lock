@@ -458,6 +458,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "datasets" },
+    { name = "huggingface-hub" },
     { name = "kaleido" },
     { name = "matplotlib" },
     { name = "pandas" },
@@ -465,6 +466,7 @@ all = [
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "ruff" },
+    { name = "safetensors" },
     { name = "seaborn" },
     { name = "tiktoken" },
     { name = "torch" },
@@ -477,6 +479,8 @@ dev = [
 ]
 hf = [
     { name = "datasets" },
+    { name = "huggingface-hub" },
+    { name = "safetensors" },
     { name = "tiktoken" },
     { name = "transformers" },
 ]
@@ -497,6 +501,7 @@ requires-dist = [
     { name = "cupy-cuda13x", specifier = ">=14.0.0" },
     { name = "cutile-gpt", extras = ["hf", "torch", "viz", "dev"], marker = "extra == 'all'" },
     { name = "datasets", marker = "extra == 'hf'", specifier = ">=3.0.0" },
+    { name = "huggingface-hub", marker = "extra == 'hf'", specifier = ">=0.26.0" },
     { name = "kaleido", marker = "extra == 'viz'", specifier = ">=0.2.0" },
     { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.0.0" },
     { name = "ml-dtypes", specifier = ">=0.5.0" },
@@ -506,6 +511,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "safetensors", marker = "extra == 'hf'", specifier = ">=0.4.0" },
     { name = "seaborn", marker = "extra == 'viz'", specifier = ">=0.13.0" },
     { name = "tiktoken", marker = "extra == 'hf'", specifier = ">=0.8.0" },
     { name = "torch", marker = "extra == 'torch'", specifier = ">=2.0.0" },

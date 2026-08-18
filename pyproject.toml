@@ -55,6 +55,11 @@ hf = [
     "transformers>=4.30.0",
     "datasets>=3.0.0",
     "tiktoken>=0.8.0",
+    # TransformerLM.from_pretrained reads checkpoints directly; the tensors
+    # arrive as torch and cross to cupy over DLPack, which is what keeps
+    # bfloat16 intact.
+    "safetensors>=0.4.0",
+    "huggingface-hub>=0.26.0",
 ]
 
 # PyTorch for comparison/benchmarking
