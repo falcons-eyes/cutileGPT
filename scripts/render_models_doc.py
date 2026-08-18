@@ -20,6 +20,8 @@ VERIFIED = {
     "HuggingFaceTB/SmolLM2-360M-Instruct": "bf16 argmax 100%, Llama layout",
     "unsloth/Llama-3.2-1B-Instruct":
         "fp32 argmax 100% (max|dlogit| 0.004); bf16 drifts to ~85%, see below",
+    "microsoft/Phi-3-mini-4k-instruct":
+        "bf16 argmax 100%; fused QKV and gate/up split at load, head_dim 96",
 }
 
 META = {
@@ -44,6 +46,7 @@ META = {
     "google/gemma-3-4b-it": ("4B dense", "Google, gated"),
     "meta-llama/Llama-3.2-1B": ("1B dense", "Meta, gated"),
     "unsloth/Llama-3.2-1B-Instruct": ("1B dense", "Llama 3 layout, ungated"),
+    "microsoft/Phi-3-mini-4k-instruct": ("3.8B dense", "Microsoft, phi3 layout"),
     "HuggingFaceTB/SmolLM2-360M-Instruct": ("0.36B dense", "Llama layout"),
 }
 
@@ -97,6 +100,13 @@ not the matmuls.
 **State-space layers.** Nemotron 3 Nano also interleaves Mamba-2 with attention
 on a fixed pattern and uses squared ReLU rather than a gated MLP - a different
 kernel family, not a variation on this one.
+
+**Fused projections are handled, not refused.** Phi packs Q/K/V into one
+`qkv_proj` and the gate and up branches into one `gate_up_proj`. The rows are
+concatenated in order, so the loader slices them apart once at load and the
+forward pass is unchanged. Phi also uses `head_dim` 96, which is not a power of
+two - both the RoPE and attention kernels round their tile up and let the extra
+lanes load as zero and clip on store.
 
 **Pre-quantized weights.** Anything shipping int4/fp8 needs a dequantizing
 loader. `cuda.tile` compiles `float8_e4m3fn`/`e5m2` already, but cupy cannot

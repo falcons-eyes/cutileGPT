@@ -43,7 +43,8 @@ def causal_attention_kernel(
         V: Value tensor (batch, n_kv_head, seq_len, head_dim)
         Out: Output tensor (batch, n_head, seq_len, head_dim)
         qk_scale: Scale factor (1/sqrt(head_dim))
-        TILE_D: Head dimension
+        TILE_D: Head dimension, rounded up to a power of two. Lanes past the
+            real head_dim load as zero and are clipped on store.
         q_offset: Absolute position of the first query row. Zero when Q and K
             span the same range; equal to the cached length when decoding, where
             Q holds only the new tokens but K/V hold the whole history. Runtime
@@ -89,7 +90,9 @@ def causal_attention_kernel(
 
     # Load query tile with latency hint and TMA
     q = ct.load(Q, index=(batch_idx, head_idx, bid_x, 0),
-                shape=(1, 1, TILE_M, TILE_D), latency=4, allow_tma=True).reshape((TILE_M, TILE_D))
+                shape=(1, 1, TILE_M, TILE_D),
+                padding_mode=ct.PaddingMode.ZERO,
+                latency=4, allow_tma=True).reshape((TILE_M, TILE_D))
 
     # Causal masking: only attend to positions <= current position
     seq_len = K.shape[2]
@@ -112,6 +115,7 @@ def causal_attention_kernel(
         k = ct.load(K, index=(batch_idx, kv_head_idx, 0, j),
                     shape=(1, 1, TILE_D, TILE_N),
                     order=(0, 1, 3, 2),
+                    padding_mode=ct.PaddingMode.ZERO,
                     latency=2, allow_tma=True).reshape((TILE_D, TILE_N))
 
         # QK^T
@@ -149,6 +153,7 @@ def causal_attention_kernel(
         # Load V and accumulate with latency hint and TMA
         v = ct.load(V, index=(batch_idx, kv_head_idx, j, 0),
                     shape=(1, 1, TILE_N, TILE_D),
+                    padding_mode=ct.PaddingMode.ZERO,
                     latency=4, allow_tma=True).reshape((TILE_N, TILE_D))
         p = p.astype(Q.dtype)
         acc = ct.mma(p, v, acc)
@@ -244,6 +249,10 @@ def cutile_causal_attention(
     # Use fixed 64x64 tiles (power of 2) with padding
     tile_m = 64
     tile_n = 64
+    # cutile needs power-of-two tile dims. head_dim usually is one, but Phi
+    # uses 96 - rounding up leaves the extra lanes zero-padded on load and
+    # clipped on store, and they contribute nothing to the QK product.
+    tile_d = 1 << (head_dim - 1).bit_length()
 
     # Grid dimensions
     grid_x = math.ceil(seq_len / tile_m)
@@ -253,7 +262,7 @@ def cutile_causal_attention(
         cp.cuda.get_current_stream(),
         (grid_x, grid_y, 1),
         causal_attention_kernel,
-        (q, k, v, out, qk_scale, q_offset, head_dim, n_head, n_kv_head,
+        (q, k, v, out, qk_scale, q_offset, tile_d, n_head, n_kv_head,
          tile_m, tile_n, window)
     )
 

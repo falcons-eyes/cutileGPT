@@ -42,12 +42,15 @@ MODELS = [
     "Qwen/Qwen3-Reranker-0.6B",
     "Qwen/Qwen2.5-0.5B-Instruct",
     "unsloth/Llama-3.2-1B-Instruct",
+    "microsoft/Phi-3-mini-4k-instruct",
     "HuggingFaceTB/SmolLM2-360M-Instruct",
     "google/gemma-3-4b-it",
     "meta-llama/Llama-3.2-1B",
 ]
 
 HF = "https://huggingface.co/{}/resolve/main/config.json"
+INDEX = "https://huggingface.co/{}/resolve/main/model.safetensors.index.json"
+SINGLE = "https://huggingface.co/{}/resolve/main/model.safetensors"
 
 
 def fetch(model: str, timeout: float = 20.0) -> tuple[dict | None, str]:
@@ -71,6 +74,39 @@ def fetch(model: str, timeout: float = 20.0) -> tuple[dict | None, str]:
         return None, "unreachable"
     except json.JSONDecodeError:
         return None, "bad config"
+
+
+def tensor_names(model: str, timeout: float = 25.0) -> list[str] | None:
+    """Read the shard index for the checkpoint's tensor names.
+
+    config.json does not say how the weights are laid out, and the difference
+    matters: Phi fuses Q/K/V into one tensor and the gate/up branches into
+    another, so a config that looks ordinary still needs a splitting loader.
+    Sharded checkpoints publish an index; single-file ones do not, and there is
+    nothing cheap to read for those.
+    """
+    headers = {"User-Agent": "cutileGPT-survey"}
+    token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    try:
+        req = urllib.request.Request(INDEX.format(model), headers=headers)
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return list(json.loads(resp.read())["weight_map"])
+    except Exception:
+        return None
+
+
+def layout_note(names: list[str] | None) -> str:
+    if not names:
+        return ""
+    layer0 = [n for n in names if ".0." in n]
+    fused = []
+    if any("qkv_proj" in n for n in layer0):
+        fused.append("fused QKV")
+    if any("gate_up_proj" in n for n in layer0):
+        fused.append("fused gate/up")
+    return ", ".join(fused)
 
 
 def text_config(cfg: dict) -> dict:
@@ -182,6 +218,10 @@ def main() -> int:
             continue
         info = classify(cfg)
         ok, why = verdict(info)
+        layout = layout_note(tensor_names(name))
+        if layout:
+            info["layout"] = layout
+            why = f"{why}; {layout}" if why else layout
         info["supported"] = ok
         info["note"] = why
         results[name] = info

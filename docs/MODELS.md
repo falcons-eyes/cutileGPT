@@ -19,7 +19,7 @@ Legend: ✅ loads and runs · 🔬 additionally verified against transformers ·
 ❌ refused, with the reason · ⚠️ config not readable.
 
 
-## Runs (11, of which 5 verified)
+## Runs (12, of which 6 verified)
 
 | Model | Size | Shape | Status | Source |
 |---|---|---|---|---|
@@ -27,12 +27,13 @@ Legend: ✅ loads and runs · 🔬 additionally verified against transformers ·
 | [Qwen/Qwen3-32B](https://huggingface.co/Qwen/Qwen3-32B) | 32B dense | 64L × 5120d, 64/8 | ✅ GQA 64/8, QK-Norm | Alibaba |
 | [mistralai/Mistral-Small-24B-Instruct-2501](https://huggingface.co/mistralai/Mistral-Small-24B-Instruct-2501) | 24B dense | 40L × 5120d, 32/8 | ✅ GQA 32/8 | Mistral |
 | [01-ai/Yi-1.5-34B-Chat](https://huggingface.co/01-ai/Yi-1.5-34B-Chat) | 34B dense | 60L × 7168d, 56/8 | ✅ GQA 56/8 | 01.AI |
-| [microsoft/phi-4](https://huggingface.co/microsoft/phi-4) | 14B dense | 40L × 5120d, 40/10 | ✅ GQA 40/10 | Microsoft |
+| [microsoft/phi-4](https://huggingface.co/microsoft/phi-4) | 14B dense | 40L × 5120d, 40/10 | ✅ GQA 40/10; fused QKV, fused gate/up | Microsoft |
 | [Qwen/Qwen3-14B](https://huggingface.co/Qwen/Qwen3-14B) | 14B dense | 40L × 5120d, 40/8 | ✅ GQA 40/8, QK-Norm | Alibaba |
 | [Qwen/Qwen3-0.6B](https://huggingface.co/Qwen/Qwen3-0.6B) | 0.6B dense | 28L × 1024d, 16/8 | 🔬 bf16 argmax 100%, generation matches | Alibaba |
 | [Qwen/Qwen3-Reranker-0.6B](https://huggingface.co/Qwen/Qwen3-Reranker-0.6B) | 0.6B dense | 28L × 1024d, 16/8 | 🔬 bf16 argmax 100% | Alibaba |
 | [Qwen/Qwen2.5-0.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct) | 0.5B dense | 24L × 896d, 14/2 | 🔬 bf16 argmax 100%, exercises the QKV bias path | Alibaba, Qwen2 layout |
 | [unsloth/Llama-3.2-1B-Instruct](https://huggingface.co/unsloth/Llama-3.2-1B-Instruct) | 1B dense | 16L × 2048d, 32/8 | 🔬 fp32 argmax 100% (max|dlogit| 0.004); bf16 drifts to ~85%, see below | Llama 3 layout, ungated |
+| [microsoft/Phi-3-mini-4k-instruct](https://huggingface.co/microsoft/Phi-3-mini-4k-instruct) | 3.8B dense | 32L × 3072d, 32/32 | 🔬 bf16 argmax 100%; fused QKV and gate/up split at load, head_dim 96 | Microsoft, phi3 layout |
 | [HuggingFaceTB/SmolLM2-360M-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-360M-Instruct) | 0.36B dense | 32L × 960d, 15/5 | 🔬 bf16 argmax 100%, Llama layout | Llama layout |
 
 ## Refused (7)
@@ -83,6 +84,13 @@ not the matmuls.
 **State-space layers.** Nemotron 3 Nano also interleaves Mamba-2 with attention
 on a fixed pattern and uses squared ReLU rather than a gated MLP - a different
 kernel family, not a variation on this one.
+
+**Fused projections are handled, not refused.** Phi packs Q/K/V into one
+`qkv_proj` and the gate and up branches into one `gate_up_proj`. The rows are
+concatenated in order, so the loader slices them apart once at load and the
+forward pass is unchanged. Phi also uses `head_dim` 96, which is not a power of
+two - both the RoPE and attention kernels round their tile up and let the extra
+lanes load as zero and clip on store.
 
 **Pre-quantized weights.** Anything shipping int4/fp8 needs a dequantizing
 loader. `cuda.tile` compiles `float8_e4m3fn`/`e5m2` already, but cupy cannot

@@ -40,6 +40,7 @@ changed all four. Those replacements are kernels here:
 | Weights | fp32 | bfloat16 | native, no conversion |
 | Attention bias | yes | usually none | applied when present |
 | RoPE scaling | - | Llama 3 long context | `rope_scaling` honored |
+| Weight layout | separate | sometimes fused | `qkv_proj` / `gate_up_proj` split |
 
 Composed, they reproduce a **Muse Glimmer decoder layer** - hidden 6656, 32
 query heads over 2 KV heads, head_dim 128, intermediate 19968, RoPE base
@@ -59,10 +60,10 @@ model = TransformerLM.from_pretrained(snapshot_download("Qwen/Qwen3-0.6B"))
 logits = model.forward(token_ids)          # bfloat16 in, bfloat16 out
 ```
 
-Five checkpoints across three families - Qwen3, Qwen2, and Llama - have been
-run end to end and agree with `transformers` on the argmax at every position.
-Six more load, including Muse Glimmer 30B, Qwen3-32B, Mistral Small 24B, and
-Yi-1.5-34B. [docs/MODELS.md](docs/MODELS.md) has the table and
+Six checkpoints across four families - Qwen3, Qwen2, Llama, and Phi - have
+been run end to end and agree with `transformers` on the argmax at every
+position. Six more load, including Muse Glimmer 30B, Qwen3-32B, Mistral Small
+24B, and Yi-1.5-34B. [docs/MODELS.md](docs/MODELS.md) has the table and
 the reasons behind each refusal; regenerate it with
 `scripts/survey_architectures.py` and check one yourself with:
 
@@ -74,6 +75,10 @@ The loader refuses rather than guesses. A checkpoint field it does not
 understand - a RoPE scaling rule, a per-layer head_dim, a bias tensor it would
 not apply - raises, because ignoring one produces fluent wrong output rather
 than an error.
+
+Head dimensions that are not powers of two work too - Phi uses 96, and both
+the RoPE and attention kernels round their tile up, load the extra lanes as
+zero, and clip them on store.
 
 **Not implemented:** MoE routing (Qwen3-30B-A3B, DeepSeek V4, Kimi), Mamba
 hybrids (Nemotron 3), partial rotary embeddings (GLM-4-32B, Qwen3.8-27B), and

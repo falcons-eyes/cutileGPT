@@ -29,36 +29,40 @@ PAD_ZERO = ct.PaddingMode.ZERO
 
 @ct.kernel(num_ctas=ct.ByTarget(sm_100=2, sm_120=1, default=1), occupancy=4)
 def rope_kernel(X, Cos, Sin, Out, N_HEAD: ConstInt, TILE_M: ConstInt,
-                HALF_DIM: ConstInt):
+                TILE_D: ConstInt):
     """
-    Apply RoPE to one (TILE_M, head_dim) block.
+    Apply RoPE to one (TILE_M, head_dim/2) block of each half.
+
+    X and Out are viewed as (batch, n_head, seq_len, 2, head_dim // 2) so the
+    two halves sit on their own axis. Tile indices count tiles, not elements,
+    so a padded tile on a combined head_dim axis would straddle the split -
+    Phi's head_dim of 96 puts the boundary at 48, which is not a tile stride.
+    Giving the halves an axis makes the split exact and lets TILE_D round up.
 
     Args:
-        X: Input (batch, n_head, seq_len, head_dim)
+        X: Input (batch, n_head, seq_len, 2, head_dim // 2)
         Cos: Cosine table (seq_len, head_dim // 2)
         Sin: Sine table (seq_len, head_dim // 2)
         Out: Output, same shape as X
         N_HEAD: Number of heads in X - query and key differ under GQA
         TILE_M: Tile size along the sequence
-        HALF_DIM: head_dim // 2
+        TILE_D: Tile size across a half, rounded up to a power of two
     """
     bid_m = ct.bid(0)
     bid_bh = ct.bid(1)
     batch_idx = bid_bh // N_HEAD
     head_idx = bid_bh % N_HEAD
 
-    # The two halves are just the two column tiles of the head, so no slicing
-    # is needed - each is a load at its own column index.
-    x1 = ct.load(X, index=(batch_idx, head_idx, bid_m, 0),
-                 shape=(1, 1, TILE_M, HALF_DIM),
-                 padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, HALF_DIM))
-    x2 = ct.load(X, index=(batch_idx, head_idx, bid_m, 1),
-                 shape=(1, 1, TILE_M, HALF_DIM),
-                 padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, HALF_DIM))
+    x1 = ct.load(X, index=(batch_idx, head_idx, bid_m, 0, 0),
+                 shape=(1, 1, TILE_M, 1, TILE_D),
+                 padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
+    x2 = ct.load(X, index=(batch_idx, head_idx, bid_m, 1, 0),
+                 shape=(1, 1, TILE_M, 1, TILE_D),
+                 padding_mode=PAD_ZERO, latency=4).reshape((TILE_M, TILE_D))
 
-    cos = ct.load(Cos, index=(bid_m, 0), shape=(TILE_M, HALF_DIM),
+    cos = ct.load(Cos, index=(bid_m, 0), shape=(TILE_M, TILE_D),
                   padding_mode=PAD_ZERO, latency=2)
-    sin = ct.load(Sin, index=(bid_m, 0), shape=(TILE_M, HALF_DIM),
+    sin = ct.load(Sin, index=(bid_m, 0), shape=(TILE_M, TILE_D),
                   padding_mode=PAD_ZERO, latency=2)
 
     # Rotate in fp32 regardless of the storage dtype. The angles are the same
@@ -69,10 +73,10 @@ def rope_kernel(X, Cos, Sin, Out, N_HEAD: ConstInt, TILE_M: ConstInt,
     out1 = x1f * cos - x2f * sin
     out2 = x2f * cos + x1f * sin
 
-    ct.store(Out, index=(batch_idx, head_idx, bid_m, 0),
-             tile=out1.reshape((1, 1, TILE_M, HALF_DIM)).astype(Out.dtype))
-    ct.store(Out, index=(batch_idx, head_idx, bid_m, 1),
-             tile=out2.reshape((1, 1, TILE_M, HALF_DIM)).astype(Out.dtype))
+    ct.store(Out, index=(batch_idx, head_idx, bid_m, 0, 0),
+             tile=out1.reshape((1, 1, TILE_M, 1, TILE_D)).astype(Out.dtype))
+    ct.store(Out, index=(batch_idx, head_idx, bid_m, 1, 0),
+             tile=out2.reshape((1, 1, TILE_M, 1, TILE_D)).astype(Out.dtype))
 
 
 def llama3_scale(inv_freq: cp.ndarray, factor: float, low_freq_factor: float,
@@ -192,14 +196,21 @@ def cutile_rope(
 
     out = cp.empty_like(x)
 
-    # cutile requires power-of-two tile dimensions, and a prompt is rarely a
-    # nice length. Loads pad with zeros and stores clip at the array bound, so
-    # a fixed tile covering the tail costs a few idle lanes and nothing else.
+    # cutile requires power-of-two tile dimensions, and neither axis obliges:
+    # prompts are any length, and head_dim/2 is 48 for Phi. Loads pad with
+    # zeros and stores clip at the array bound, so rounding both up costs a
+    # few idle lanes and nothing else.
     tile_m = 64
+    tile_d = 1 << (half - 1).bit_length()
     grid_m = (seq_len + tile_m - 1) // tile_m
 
+    # Free reshape - the halves become their own axis so a tile index lands
+    # exactly on the split.
+    x_split = x.reshape(batch, n_head, seq_len, 2, half)
+    out_split = out.reshape(batch, n_head, seq_len, 2, half)
+
     ct.launch(cp.cuda.get_current_stream(), (grid_m, batch * n_head, 1),
-              rope_kernel, (x, cos, sin, out, n_head, tile_m, half))
+              rope_kernel, (x_split, cos, sin, out_split, n_head, tile_m, tile_d))
 
     return out
 

@@ -7,8 +7,10 @@ Uses random weights but real tokenization to demonstrate the complete pipeline.
 """
 
 import cupy as cp
-from cutile_gpt.model import CutileGPT, CutileGPTConfig
 from transformers import GPT2Tokenizer
+
+from cutile_gpt import CutileGPT
+from cutile_gpt import GPTConfig as CutileGPTConfig
 
 
 def test_generation():
@@ -25,7 +27,7 @@ def test_generation():
     # Create cutileGPT model (using random weights for demonstration)
     print("Creating cutileGPT model...")
     config = CutileGPTConfig.gpt2()
-    model = CutileGPT(config, use_fused_mlp=False)
+    model = CutileGPT(config)
 
     # Test prompts
     prompts = [
@@ -78,7 +80,7 @@ def benchmark_generation():
 
     tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
     config = CutileGPTConfig.gpt_tile_medium()
-    model = CutileGPT(config, use_fused_mlp=False)
+    model = CutileGPT(config)
 
     prompt = "The future of AI"
     encoded = tokenizer.encode(prompt, return_tensors='pt')

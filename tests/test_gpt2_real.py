@@ -17,9 +17,11 @@ import torch
 
 # Add external/minGPT to path
 sys.path.insert(0, 'external/minGPT')
-from cutile_gpt.model import CutileGPT, CutileGPTConfig
 from mingpt.bpe import BPETokenizer
 from mingpt.model import GPT as minGPT
+
+from cutile_gpt import CutileGPT
+from cutile_gpt import GPTConfig as CutileGPTConfig
 
 
 def load_gpt2_weights(model_type='gpt2'):
@@ -70,7 +72,7 @@ def load_gpt2_weights(model_type='gpt2'):
     return mingpt_model, cutile_model, tokenizer
 
 
-def test_generation(mingpt_model, cutile_model, tokenizer, prompt, max_new_tokens=20):
+def compare_generation(mingpt_model, cutile_model, tokenizer, prompt, max_new_tokens=20):
     """
     Test text generation with both models and compare.
 
@@ -157,7 +159,7 @@ def main():
     ]
 
     for prompt in prompts:
-        test_generation(mingpt_model, cutile_model, tokenizer, prompt, max_new_tokens=30)
+        compare_generation(mingpt_model, cutile_model, tokenizer, prompt, max_new_tokens=30)
 
     print("\n" + "="*80)
     print("Test completed!")

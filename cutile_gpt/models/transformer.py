@@ -73,6 +73,8 @@ class TransformerLM:
                 for key in sf.keys():
                     weights[key] = _to_cupy(sf.get_tensor(key))
 
+        weights = cls._split_fused(arch, weights)
+
         missing = cls._missing_keys(arch, weights)
         if missing:
             raise UnsupportedArchitecture(
@@ -91,6 +93,50 @@ class TransformerLM:
                 f"first few: {sorted(unused)[:4]}"
             )
         return cls(arch, weights)
+
+    @staticmethod
+    def _split_fused(arch: ModelArchitecture, weights: dict) -> dict:
+        """Split the fused projections some families ship.
+
+        Phi packs Q, K, and V into one `qkv_proj` and the gate and up branches
+        into one `gate_up_proj`. The rows are simply concatenated in that
+        order, so splitting them at load time costs one slice per layer and
+        leaves the forward pass untouched.
+        """
+        for i in range(arch.n_layer):
+            p = f"model.layers.{i}."
+
+            fused = weights.pop(p + "self_attn.qkv_proj.weight", None)
+            if fused is not None:
+                q_end = arch.attn_dim
+                k_end = q_end + arch.kv_dim
+                expected = k_end + arch.kv_dim
+                if fused.shape[0] != expected:
+                    raise UnsupportedArchitecture(
+                        f"{p}self_attn.qkv_proj has {fused.shape[0]} rows, "
+                        f"expected {expected} for {arch.n_head}/{arch.n_kv_head} "
+                        f"heads of {arch.head_dim}"
+                    )
+                weights[p + "self_attn.q_proj.weight"] = cp.ascontiguousarray(
+                    fused[:q_end])
+                weights[p + "self_attn.k_proj.weight"] = cp.ascontiguousarray(
+                    fused[q_end:k_end])
+                weights[p + "self_attn.v_proj.weight"] = cp.ascontiguousarray(
+                    fused[k_end:])
+
+            fused = weights.pop(p + "mlp.gate_up_proj.weight", None)
+            if fused is not None:
+                half = arch.intermediate_size
+                if fused.shape[0] != 2 * half:
+                    raise UnsupportedArchitecture(
+                        f"{p}mlp.gate_up_proj has {fused.shape[0]} rows, "
+                        f"expected {2 * half}"
+                    )
+                weights[p + "mlp.gate_proj.weight"] = cp.ascontiguousarray(
+                    fused[:half])
+                weights[p + "mlp.up_proj.weight"] = cp.ascontiguousarray(
+                    fused[half:])
+        return weights
 
     @staticmethod
     def _consumed_keys(arch: ModelArchitecture, weights: dict) -> set[str]:
