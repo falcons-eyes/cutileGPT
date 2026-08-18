@@ -6,15 +6,12 @@ AS-IS vs TO-BE Comparison Script
 Compares PyTorch minGPT (AS-IS) with cutile GPT (TO-BE).
 """
 
-import sys
-import os
-import time
 import argparse
+import os
+import sys
 
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
 import cupy as cp
+import torch
 
 # Add minGPT to path (external submodule)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'external', 'minGPT'))
@@ -22,12 +19,12 @@ from mingpt.model import GPT
 
 # Add parent directory to path for cutile_gpt
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-from cutile_gpt.models import CutileGPT, GPTConfig as CutileGPTConfig
+from cutile_gpt.models import CutileGPT
+from cutile_gpt.models import GPTConfig as CutileGPTConfig
 
 
 def create_mingpt_model(config: CutileGPTConfig) -> GPT:
     """Create a minGPT model with matching configuration."""
-    from mingpt.utils import CfgNode as CN
 
     gpt_config = GPT.get_default_config()
     gpt_config.model_type = None
@@ -170,7 +167,7 @@ def main():
 
     is_tile_optimized = args.model.startswith('tile-')
 
-    print(f"\nModel Configuration:")
+    print("\nModel Configuration:")
     print(f"  Model: gpt-{args.model}")
     print(f"  Tile-optimized (power of 2): {is_tile_optimized}")
     print(f"  Layers: {config.n_layer}")
@@ -243,7 +240,7 @@ def main():
 
         # Comparison
         speedup = mingpt_stats['mean_ms'] / cutile_stats['mean_ms']
-        print(f"\n--- Performance Summary ---")
+        print("\n--- Performance Summary ---")
         print(f"minGPT (AS-IS):  {mingpt_stats['mean_ms']:.3f} ms")
         print(f"cutile (TO-BE):  {cutile_stats['mean_ms']:.3f} ms")
         if speedup > 1:

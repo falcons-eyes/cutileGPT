@@ -6,8 +6,8 @@ Data structures for explicit, declarative tile programming.
 """
 
 from dataclasses import dataclass
-from typing import Tuple
 from enum import Enum, auto
+from typing import Tuple
 
 
 class Layout(Enum):

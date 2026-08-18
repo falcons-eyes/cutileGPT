@@ -7,8 +7,9 @@ Implements the approximate GELU used in GPT-2:
 """
 
 import math
-import cupy as cp
+
 import cuda.tile as ct
+import cupy as cp
 
 ConstInt = ct.Constant[int]
 

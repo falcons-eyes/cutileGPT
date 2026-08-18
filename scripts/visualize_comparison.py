@@ -16,27 +16,25 @@ Usage:
 
 import argparse
 import json
-import sys
 import os
-from pathlib import Path
+import sys
 from datetime import datetime
-from typing import Dict, List, Any
+from pathlib import Path
+from typing import Any, Dict
 
-import torch
 import cupy as cp
 import plotly.graph_objects as go
+import torch
 from plotly.subplots import make_subplots
 
 # Add minGPT to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'external', 'minGPT'))
-from mingpt.model import GPT
-
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
+from mingpt.model import GPT
 
 
 def create_mingpt_model(config: CutileGPTConfig) -> GPT:
     """Create a minGPT model with matching configuration."""
-    from mingpt.utils import CfgNode as CN
 
     gpt_config = GPT.get_default_config()
     gpt_config.model_type = None
@@ -494,7 +492,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ Comparison Complete!")
     print("=" * 80)
-    print(f"\nOpen the dashboard:")
+    print("\nOpen the dashboard:")
     print(f"  file://{dashboard_path.absolute()}")
     print("=" * 80)
 

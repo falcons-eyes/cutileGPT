@@ -7,8 +7,9 @@ We pad n_embd to next power of 2, then slice back.
 """
 
 import math
-import cupy as cp
+
 import cuda.tile as ct
+import cupy as cp
 
 ConstInt = ct.Constant[int]
 

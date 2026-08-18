@@ -10,27 +10,27 @@ Compares across:
 - Metrics: latency, throughput, memory, speedup
 """
 
-import sys
 import os
+import sys
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, project_root)
 sys.path.insert(0, os.path.join(project_root, 'external', 'minGPT'))
 
-import torch
-import cupy as cp
-import time
 import json
+import time
 from pathlib import Path
-from typing import Dict, List, Tuple
-import pandas as pd
-import matplotlib.pyplot as plt
-import seaborn as sns
-import numpy as np
 
+import cupy as cp
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import seaborn as sns
+import torch
 from mingpt.model import GPT
-from cutile_gpt.model_tile import CutileGPT, GPTConfig
+
+from cutile_gpt import CutileGPT, GPTConfig
 
 
 class ComprehensiveComparison:

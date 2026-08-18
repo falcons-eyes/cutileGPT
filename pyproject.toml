@@ -1,6 +1,6 @@
 [project]
 name = "cutile-gpt"
-version = "0.2.0"
+version = "0.2.1"
 description = "High-performance GPT implementation using NVIDIA CUDA Tile Programming"
 readme = "README.md"
 license = {text = "Apache-2.0"}
@@ -31,9 +31,13 @@ classifiers = [
     "Environment :: GPU :: NVIDIA CUDA",
 ]
 
-# Core dependencies only - minimal for cutile kernels
+# Core dependencies only - minimal for cutile kernels.
+# cuda-tile provides the `cuda.tile` module every kernel imports, and tileiras
+# (its compiler) requires the CUDA 13.1+ toolchain, so cupy must be a cuda13
+# build - a cuda12 build cannot load kernels built by it.
 dependencies = [
-    "cupy-cuda12x>=13.0.0",
+    "cuda-tile>=1.0.1",
+    "cupy-cuda13x>=13.6.0",
     "numpy>=2.0.0",
 ]
 
@@ -105,10 +109,20 @@ exclude = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+# Submodules and render output are not ours to lint.
+extend-exclude = ["external", "media", "mlir_research"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Manim scenes use `from manim import *`, which is the library's documented
+# idiom - every Mobject and animation is expected to be in scope unqualified.
+"cutile_intro.py" = ["F403", "F405"]
+"cutile_deepdive.py" = ["F403", "F405"]
+# Scripts bootstrap sys.path for the minGPT submodule before importing.
+"scripts/comprehensive_comparison.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

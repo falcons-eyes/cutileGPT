@@ -33,34 +33,33 @@ Quick Start (with HuggingFace):
     model.load_from_huggingface('gpt2')
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 # =============================================================================
 # Core: Low-level kernels (always available)
 # =============================================================================
-from .kernels import (
-    cutile_gelu,
-    cutile_embedding,
-    cutile_linear,
-    cutile_linear_bias,
-    cutile_layer_norm,
-    cutile_causal_attention,
-    cutile_fused_mlp,
-)
-
 # =============================================================================
 # Core: High-level Tile API (always available)
 # =============================================================================
 from .api import (
-    TileOp,
-    TileConfig,
-    TensorSpec,
-    Layout,
-    DType,
-    tile,
-    configure_tiles,
-    DataProfile,
     DataAnalyzer,
+    DataProfile,
+    DType,
+    Layout,
+    TensorSpec,
+    TileConfig,
+    TileOp,
+    configure_tiles,
+    tile,
+)
+from .kernels import (
+    cutile_causal_attention,
+    cutile_embedding,
+    cutile_fused_mlp,
+    cutile_gelu,
+    cutile_layer_norm,
+    cutile_linear,
+    cutile_linear_bias,
 )
 
 # =============================================================================
@@ -72,6 +71,7 @@ from .models import CutileGPT, GPTConfig
 # Optional: Utils (some require torch/transformers)
 # =============================================================================
 from .utils import benchmark_cupy
+
 
 # Lazy imports for optional dependencies
 def __getattr__(name):

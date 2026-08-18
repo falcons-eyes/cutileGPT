@@ -20,8 +20,8 @@ Usage:
 
 import argparse
 import time
+
 import cupy as cp
-import torch
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
 
 
@@ -99,7 +99,7 @@ def profile_model_configs():
 
         results[name] = stats
 
-        print(f"\nForward Pass Timing:")
+        print("\nForward Pass Timing:")
         print(f"  Mean:   {stats['mean']:.4f} ms")
         print(f"  Std:    {stats['std']:.4f} ms")
         print(f"  Min:    {stats['min']:.4f} ms")
@@ -132,7 +132,7 @@ def profile_kernel_analysis():
     seq_len = 32
     idx = cp.random.randint(0, config.vocab_size, (batch_size, seq_len), dtype=cp.int64)
 
-    print(f"\nRunning forward pass...")
+    print("\nRunning forward pass...")
     print(f"  Batch: {batch_size}, Seq Len: {seq_len}")
     print(f"  Model: {config.n_layer} layers, {config.n_embd} dims")
 
@@ -167,7 +167,7 @@ def profile_system_wide():
     seq_len = 128
     idx = cp.random.randint(0, config.vocab_size, (batch_size, seq_len), dtype=cp.int64)
 
-    print(f"\nRunning benchmark...")
+    print("\nRunning benchmark...")
     print(f"  Batch: {batch_size}, Seq Len: {seq_len}")
     print(f"  Model: {config.n_layer} layers, {config.n_embd} dims")
 

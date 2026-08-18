@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Question or idea
+    url: https://github.com/falcons-eyes/cutileGPT/discussions
+    about: Use Discussions for open-ended questions about Tile Programming.
+  - name: cuTile Python (upstream)
+    url: https://github.com/NVIDIA/cutile-python/issues
+    about: Compiler or runtime problems in cuda-tile itself belong upstream.

@@ -10,8 +10,9 @@ instead of going back to global memory.
 """
 
 import math
-import cupy as cp
+
 import cuda.tile as ct
+import cupy as cp
 
 ConstInt = ct.Constant[int]
 
@@ -42,7 +43,6 @@ def fused_mlp_kernel(
 
     The intermediate hidden activations (4x larger) never touch global memory.
     """
-    M = X.shape[0]
     N_in = X.shape[1]
     N_hidden = W_fc.shape[0]
 
@@ -131,7 +131,6 @@ def cutile_fused_mlp(
     """
     original_shape = x.shape
     n_embd = x.shape[-1]
-    n_hidden = w_fc.shape[0]
 
     # Flatten to 2D
     x_2d = cp.reshape(x, (-1, n_embd))

@@ -19,16 +19,14 @@ Usage:
 
 import argparse
 import json
-import time
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Any
+from pathlib import Path
+from typing import Any, Dict
 
 import cupy as cp
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
+from plotly.subplots import make_subplots
 
 
 class PerformanceDashboard:
@@ -298,7 +296,7 @@ class PerformanceDashboard:
         layers = [self.data['benchmarks'][c]['config']['n_layer'] for c in configs]
         embds = [self.data['benchmarks'][c]['config']['n_embd'] for c in configs]
 
-        efficiency = [t / l for t, l in zip(throughputs, layers)]
+        efficiency = [t / n for t, n in zip(throughputs, layers)]
 
         fig = go.Figure()
 
@@ -523,7 +521,7 @@ def main():
     print("\n" + "=" * 80)
     print("✅ Dashboard Generation Complete!")
     print("=" * 80)
-    print(f"\nOpen the dashboard in your browser:")
+    print("\nOpen the dashboard in your browser:")
     print(f"  file://{dashboard_path.absolute()}")
     print("\nData files:")
     print(f"  JSON: {dashboard.output_dir / 'profiling_data.json'}")

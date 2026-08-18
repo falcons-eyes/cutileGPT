@@ -16,8 +16,9 @@ Compare this with traditional CUDA where you'd manually:
 """
 
 import math
-import cupy as cp
+
 import cuda.tile as ct
+import cupy as cp
 import numpy as np
 
 ConstInt = ct.Constant[int]
@@ -410,7 +411,7 @@ if __name__ == "__main__":
     y_ref = reference_attention(q, k, v)
 
     max_diff = cp.abs(y_tile - y_ref).max()
-    print(f"Input shapes:")
+    print("Input shapes:")
     print(f"  Q: {q.shape}")
     print(f"  K: {k.shape}")
     print(f"  V: {v.shape}")

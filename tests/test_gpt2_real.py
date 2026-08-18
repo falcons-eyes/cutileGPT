@@ -11,16 +11,15 @@ This script:
 """
 
 import sys
+
 import cupy as cp
 import torch
-from transformers import GPT2Tokenizer, GPT2LMHeadModel
 
 # Add external/minGPT to path
 sys.path.insert(0, 'external/minGPT')
-from mingpt.model import GPT as minGPT
-from mingpt.bpe import BPETokenizer
-
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
+from mingpt.bpe import BPETokenizer
+from mingpt.model import GPT as minGPT
 
 
 def load_gpt2_weights(model_type='gpt2'):

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uvx ruff check .
+      - name: Lockfile is in sync with pyproject.toml
+        run: uv lock --check
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build sdist and wheel
+        run: uv build
+
+      - name: Validate distribution metadata
+        run: uvx twine check dist/*
+
+      # cutile-gpt 0.2.0 shipped without cuda-tile in requires-dist, so
+      # `pip install cutile-gpt` resolved fine and then died on
+      # `import cuda.tile`. Fail the build if that ever recurs.
+      - name: Every third-party import is a declared dependency
+        run: uv run --no-project --with packaging python scripts/check_dependencies.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  import:
+    name: Import (no GPU)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # The runner has no Blackwell GPU, so kernels cannot execute here.
+      # Importing still proves the package has no syntax errors, no broken
+      # relative imports, and no eager import of an optional dependency.
+      - name: Import every module without optional extras
+        run: uv run --no-project --python 3.13 --with . python scripts/check_imports.py
+
+  version:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: pyproject version == cutile_gpt.__version__
+        run: |
+          python3 - <<'PY'
+          import re, tomllib, pathlib, sys
+          proj = tomllib.load(open("pyproject.toml", "rb"))["project"]["version"]
+          src = pathlib.Path("cutile_gpt/__init__.py").read_text()
+          m = re.search(r'^__version__ = "([^"]+)"', src, re.M)
+          if not m:
+              sys.exit("cutile_gpt/__init__.py has no __version__")
+          if m.group(1) != proj:
+              sys.exit(f"version mismatch: pyproject={proj} __init__={m.group(1)}")
+          print(f"both report {proj}")
+          PY

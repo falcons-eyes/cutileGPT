@@ -8,15 +8,22 @@ This directory contains the core implementation of cutileGPT.
 
 ```
 cutile_gpt/
-├── model_tile.py              # Pure Tile Philosophy GPT
-├── model.py                   # Original CuPy implementation
-├── compare.py                 # PyTorch vs cutileGPT comparison
-└── kernels/                   # Tile Programming kernels
-    ├── layernorm.py          # Declarative LayerNorm
-    ├── gelu.py               # 8.3x faster GELU
-    ├── linear.py             # Tile-based matmul
-    ├── attention.py          # Flash Attention
-    └── ...
+├── kernels/                   # Tile Programming kernels
+│   ├── layernorm.py          # Declarative LayerNorm
+│   ├── gelu.py               # 8.3x faster GELU
+│   ├── linear.py             # Tile-based matmul
+│   ├── attention.py          # Flash Attention
+│   ├── embedding.py          # Token + position embedding
+│   └── fused_mlp.py          # Fused fc -> GELU -> proj
+├── models/                    # Model assembly
+│   ├── gpt.py                # CutileGPT
+│   └── config.py             # GPTConfig and its presets
+├── api/                       # High-level Tile API
+│   ├── tile_op.py            # TileOp fluent builder
+│   ├── config.py             # TileConfig, TensorSpec, Layout, DType
+│   └── profiler.py           # DataAnalyzer, DataProfile
+├── utils/                     # Benchmarking and HF weight loading
+└── examples/                  # Annotated single-kernel tutorials
 ```
 
 ## 🎯 Tile Programming Kernels
@@ -109,7 +116,7 @@ y = cutile_causal_attention(q, k, v, n_head)
 
 ## 🎨 Models
 
-### model_tile.py - Pure Tile Philosophy
+### models/gpt.py - CutileGPT
 
 **Complete GPT implementation with ZERO explicit thread management**
 
@@ -117,44 +124,52 @@ y = cutile_causal_attention(q, k, v, n_head)
 - All operations declarative
 - Transformer blocks with residual connections
 - Text generation support
-- minGPT weight loading
+- HuggingFace and minGPT weight loading
 
 **Usage**:
 ```python
-from cutile_gpt.model_tile import create_gpt_nano, CutileGPT, GPTConfig
+import cupy as cp
+from cutile_gpt import CutileGPT, GPTConfig
 
-# Quick start
-model = create_gpt_nano()
+# Quick start from a preset
+model = CutileGPT(GPTConfig.gpt_nano())
 
-# Forward pass
+# Forward pass - returns (logits, loss) where loss is always None
 tokens = cp.array([[100, 200, 300]], dtype=cp.int32)
-logits = model.forward(tokens)
+logits, _ = model.forward(tokens)
 
 # Generate
 generated = model.generate(tokens, max_new_tokens=50)
 
 # Custom config
-config = GPTConfig(n_layer=6, n_head=4, n_embd=256)
-model = CutileGPT(config)
+model = CutileGPT(GPTConfig(n_layer=6, n_head=4, n_embd=256))
 ```
 
-**Available configs**:
-- `create_gpt_nano()` - 3 layers, 48 dims, 3 heads
-- `create_gpt2('gpt2')` - 12 layers, 768 dims, 12 heads
-- `create_gpt2('gpt2-medium')` - 24 layers, 1024 dims, 16 heads
+### models/config.py - GPTConfig presets
 
-### model.py - Original Implementation
+`GPTConfig` is a dataclass (`vocab_size`, `block_size`, `n_layer`, `n_head`,
+`n_embd`) with classmethod presets:
 
-**Original CuPy-based implementation (PyTorch competitive)**
+| Preset | Layers | Heads | Embedding | Context |
+|--------|--------|-------|-----------|---------|
+| `GPTConfig.gpt_nano()` | 3 | 3 | 48 | 128 |
+| `GPTConfig.gpt_micro()` | 4 | 4 | 128 | 256 |
+| `GPTConfig.gpt_mini()` | 6 | 6 | 192 | 256 |
+| `GPTConfig.gpt2()` | 12 | 12 | 768 | 1024 |
+| `GPTConfig.gpt2_medium()` | 24 | 16 | 1024 | 1024 |
+| `GPTConfig.gpt2_large()` | 36 | 20 | 1280 | 1024 |
+| `GPTConfig.gpt2_xl()` | 48 | 25 | 1600 | 1024 |
+| `GPTConfig.gpt_tile_small()` | 4 | 4 | 64 | 128 |
+| `GPTConfig.gpt_tile_medium()` | 6 | 4 | 128 | 256 |
+| `GPTConfig.gpt_tile_large()` | 8 | 8 | 256 | 512 |
 
-**Usage**:
+`GPTConfig.from_name("gpt2")` resolves a preset by name.
+
+Loading pretrained weights requires the `hf` extra:
+
 ```python
-from cutile_gpt.model import CutileGPT, CutileGPTConfig
-
-config = CutileGPTConfig.gpt_tile_medium()
-model = CutileGPT(config)
-
-logits, _ = model(idx)
+model = CutileGPT(GPTConfig.gpt2())
+model.load_from_huggingface("gpt2")   # pip install cutile-gpt[hf]
 ```
 
 ## 🔧 Optimization Techniques
@@ -199,11 +214,11 @@ Hopper/Blackwell hardware acceleration
 # Test individual kernel
 python -m cutile_gpt.kernels.gelu
 
-# Test model
-python -m cutile_gpt.model_tile
+# Run the end-to-end demo
+python demo_tile_gpt.py
 
-# Compare with PyTorch
-python cutile_gpt/compare.py --model nano
+# Compare with PyTorch minGPT
+python scripts/compare_mingpt.py
 ```
 
 ## 📚 API Reference

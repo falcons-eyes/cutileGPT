@@ -7,8 +7,8 @@ Uses random weights but real tokenization to demonstrate the complete pipeline.
 """
 
 import cupy as cp
-from transformers import GPT2Tokenizer
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
+from transformers import GPT2Tokenizer
 
 
 def test_generation():
@@ -61,7 +61,7 @@ def test_generation():
         generated_tokens = cp.asnumpy(generated[0]).tolist()
         output_text = tokenizer.decode(generated_tokens)
 
-        print(f"\nGenerated text:")
+        print("\nGenerated text:")
         print(f"{output_text}")
         print(f"\nGenerated {len(generated_tokens)} total tokens")
 
@@ -105,7 +105,7 @@ def benchmark_generation():
     tokens_per_sec = (tokens_per_iter * iterations) / elapsed
     ms_per_token = (elapsed * 1000) / (tokens_per_iter * iterations)
 
-    print(f"\nResults:")
+    print("\nResults:")
     print(f"  Total time: {elapsed:.2f} seconds")
     print(f"  Tokens/sec: {tokens_per_sec:.1f}")
     print(f"  ms/token: {ms_per_token:.2f}")

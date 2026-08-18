@@ -7,8 +7,9 @@ After: 32x32 tiles
 Expected: ~30-40% speedup on attention layer
 """
 
-import cupy as cp
 import time
+
+import cupy as cp
 from cutile_gpt.model import CutileGPT, CutileGPTConfig
 
 

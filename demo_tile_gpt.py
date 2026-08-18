@@ -10,7 +10,12 @@ Every operation follows: specify WHAT, compiler handles HOW.
 """
 
 import cupy as cp
-from cutile_gpt.model_tile import CutileGPT, GPTConfig, create_gpt_nano, create_gpt2
+
+from cutile_gpt import CutileGPT, GPTConfig
+from cutile_gpt.kernels.attention import cutile_causal_attention
+from cutile_gpt.kernels.fused_mlp import cutile_fused_mlp
+from cutile_gpt.kernels.layernorm import cutile_layer_norm
+from cutile_gpt.kernels.linear import cutile_linear_bias
 
 
 def test_individual_kernels():
@@ -20,10 +25,7 @@ def test_individual_kernels():
     print("=" * 60)
 
     # Use existing working kernels (they already follow Tile Philosophy!)
-    from cutile_gpt.kernels.layernorm import cutile_layer_norm
     from cutile_gpt.kernels.gelu import cutile_gelu
-    from cutile_gpt.kernels.linear import cutile_linear_bias
-    from cutile_gpt.kernels.attention import cutile_causal_attention
 
     # Test LayerNorm
     print("\n1. Testing LayerNorm (Tile Philosophy)")
@@ -70,22 +72,47 @@ def test_transformer_block():
     print("Part 2: Testing Transformer Block")
     print("=" * 60)
 
-    from cutile_gpt.model_tile import Block, GPTConfig
-
     config = GPTConfig(n_layer=1, n_head=4, n_embd=256, block_size=128)
-    block = Block(config)
 
-    print(f"\nTransformer block configuration:")
+    print("\nTransformer block configuration:")
     print(f"  Embedding dimension: {config.n_embd}")
     print(f"  Number of heads: {config.n_head}")
     print(f"  Head dimension: {config.n_embd // config.n_head}")
 
-    # Test forward pass
+    # A block is just its kernels composed in order - there is no Block class to
+    # hide them, which is the point: every step below is a declarative tile op.
     batch, seq_len = 2, 64
+    head_dim = config.n_embd // config.n_head
     x = cp.random.randn(batch, seq_len, config.n_embd, dtype=cp.float32)
 
+    def _ones_zeros(n):
+        return cp.ones(n, dtype=cp.float32), cp.zeros(n, dtype=cp.float32)
+
+    ln_w, ln_b = _ones_zeros(config.n_embd)
+    qkv_w = cp.random.randn(3 * config.n_embd, config.n_embd, dtype=cp.float32) * 0.02
+    qkv_b = cp.zeros(3 * config.n_embd, dtype=cp.float32)
+    proj_w = cp.random.randn(config.n_embd, config.n_embd, dtype=cp.float32) * 0.02
+    proj_b = cp.zeros(config.n_embd, dtype=cp.float32)
+
     print(f"\nInput: {x.shape}")
-    y = block(x)
+
+    # 1. attention branch: x + attn(norm(x))
+    h = cutile_layer_norm(x, ln_w, ln_b)
+    qkv = cutile_linear_bias(h.reshape(-1, config.n_embd), qkv_w, qkv_b)
+    qkv = qkv.reshape(batch, seq_len, 3, config.n_head, head_dim)
+    q, k, v = (cp.ascontiguousarray(qkv[:, :, i].transpose(0, 2, 1, 3)) for i in range(3))
+    attn = cutile_causal_attention(q, k, v, config.n_head)
+    attn = cp.ascontiguousarray(attn.transpose(0, 2, 1, 3)).reshape(-1, config.n_embd)
+    x = x + cutile_linear_bias(attn, proj_w, proj_b).reshape(batch, seq_len, config.n_embd)
+
+    # 2. MLP branch: x + mlp(norm(x)), fused into a single kernel launch
+    fc_w = cp.random.randn(4 * config.n_embd, config.n_embd, dtype=cp.float32) * 0.02
+    fc_b = cp.zeros(4 * config.n_embd, dtype=cp.float32)
+    mlp_proj_w = cp.random.randn(config.n_embd, 4 * config.n_embd, dtype=cp.float32) * 0.02
+    mlp_proj_b = cp.zeros(config.n_embd, dtype=cp.float32)
+    h = cutile_layer_norm(x, ln_w, ln_b)
+    y = x + cutile_fused_mlp(h, fc_w, fc_b, mlp_proj_w, mlp_proj_b)
+
     print(f"Output: {y.shape}")
 
     assert y.shape == x.shape
@@ -102,9 +129,9 @@ def test_full_model():
 
     # Create nano model for testing
     print("\nCreating GPT nano model (for fast testing)...")
-    model = create_gpt_nano()
+    model = CutileGPT(GPTConfig.gpt_nano())
 
-    print(f"\nModel configuration:")
+    print("\nModel configuration:")
     print(f"  Layers: {model.config.n_layer}")
     print(f"  Heads: {model.config.n_head}")
     print(f"  Embedding: {model.config.n_embd}")
@@ -117,7 +144,7 @@ def test_full_model():
     idx = cp.random.randint(0, model.config.vocab_size, (batch, seq_len), dtype=cp.int32)
 
     print(f"   Input tokens: {idx.shape}")
-    logits = model.forward(idx)
+    logits, _ = model.forward(idx)
     print(f"   Output logits: {logits.shape}")
 
     assert logits.shape == (batch, seq_len, model.config.vocab_size)
@@ -214,8 +241,9 @@ def performance_demo():
     print("Part 5: Performance Demo")
     print("=" * 60)
 
-    from cutile_gpt.kernels.gelu import cutile_gelu, cupy_gelu
     import time
+
+    from cutile_gpt.kernels.gelu import cupy_gelu, cutile_gelu
 
     # Large tensor for performance test
     batch, seq, embd = 32, 512, 768
@@ -232,18 +260,18 @@ def performance_demo():
     # Time Tile kernel
     start = time.time()
     for _ in range(10):
-        y = cutile_gelu(x)
+        cutile_gelu(x)
     cp.cuda.Stream.null.synchronize()
     tile_time = (time.time() - start) / 10
 
     # Time CuPy reference
     start = time.time()
     for _ in range(10):
-        y = cupy_gelu(x)
+        cupy_gelu(x)
     cp.cuda.Stream.null.synchronize()
     cupy_time = (time.time() - start) / 10
 
-    print(f"\nGELU Performance:")
+    print("\nGELU Performance:")
     print(f"  Tile kernel: {tile_time*1000:.3f} ms")
     print(f"  CuPy kernel: {cupy_time*1000:.3f} ms")
     print(f"  Speedup: {cupy_time/tile_time:.2f}x")

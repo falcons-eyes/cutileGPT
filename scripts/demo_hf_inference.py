@@ -16,12 +16,12 @@ Requirements:
     pip install transformers datasets tiktoken
 """
 
-import sys
 import os
+import sys
 import time
-import math
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List, Tuple
+from typing import Any, Dict, List, Tuple
+
 import cupy as cp
 import numpy as np
 
@@ -272,7 +272,6 @@ class HFWeightLoader:
 
     def _convert_weights(self) -> Dict[str, cp.ndarray]:
         """Convert PyTorch state dict to CuPy arrays."""
-        import torch
 
         sd = self._hf_model.state_dict()
         weights = {}
@@ -359,7 +358,7 @@ class TileGPT2:
         self.ln_f_b = self.weights['transformer.ln_f.bias']
 
         print(f"  Weights transposed: attn_w shape = {self.blocks[0]['attn_w'].shape}")
-        print(f"  Expected: (2304, 768) = (3*n_embd, n_embd)")
+        print("  Expected: (2304, 768) = (3*n_embd, n_embd)")
 
     def forward(self, idx: cp.ndarray) -> cp.ndarray:
         """
@@ -372,8 +371,10 @@ class TileGPT2:
             Logits (batch, seq_len, vocab_size)
         """
         from cutile_gpt.kernels import (
-            cutile_layer_norm, cutile_linear_bias, cutile_gelu,
-            cutile_causal_attention
+            cutile_causal_attention,
+            cutile_gelu,
+            cutile_layer_norm,
+            cutile_linear_bias,
         )
 
         batch, seq_len = idx.shape
@@ -484,7 +485,7 @@ def demo_with_tile_api():
     """
     Demonstrate the declarative Tile API with real GPT-2.
     """
-    from cutile_gpt.api import tile, configure_tiles, TileConfig
+    from cutile_gpt.api import configure_tiles, tile
 
     print("\n" + "="*70)
     print("      TILE API DEMONSTRATION - Declarative Data Flow")

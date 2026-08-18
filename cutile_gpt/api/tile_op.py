@@ -16,13 +16,15 @@ Example:
 """
 
 from __future__ import annotations
-from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any
-from enum import Enum, auto
+
 import math
+from dataclasses import dataclass, field
+from enum import Enum, auto
+from typing import Any, Dict, List, Optional
+
 import cupy as cp
 
-from .config import TileConfig, TensorSpec, Layout, DType
+from .config import DType, Layout, TensorSpec, TileConfig
 
 
 class OpType(Enum):
@@ -440,8 +442,12 @@ class TileOp:
     def _execute_ops(self) -> cp.ndarray:
         """Execute the operation graph."""
         from ..kernels import (
-            cutile_linear, cutile_linear_bias, cutile_gelu,
-            cutile_layer_norm, cutile_causal_attention, cutile_fused_mlp
+            cutile_causal_attention,
+            cutile_fused_mlp,
+            cutile_gelu,
+            cutile_layer_norm,
+            cutile_linear,
+            cutile_linear_bias,
         )
 
         current = self._data

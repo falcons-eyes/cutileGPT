@@ -5,11 +5,13 @@ Current: 64x64 tiles
 Testing: 32x32, 64x64, 128x128
 """
 
-import cupy as cp
-import cuda.tile as ct
 import math
 import time
-from cutile_gpt.kernels.attention import cutile_causal_attention, cupy_causal_attention
+
+import cuda.tile as ct
+import cupy as cp
+
+from cutile_gpt.kernels.attention import cupy_causal_attention
 
 
 def benchmark_tile_size(q, k, v, n_head, tile_m, tile_n, iterations=100):

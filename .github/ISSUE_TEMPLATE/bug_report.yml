@@ -1,0 +1,39 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        cuTile currently compiles for Blackwell only (`sm_100` / `sm_120`) and
+        needs CUDA Toolkit 13.1+ with driver r580+. If your GPU is Hopper or
+        older, kernels are expected to fail to compile - that is an upstream
+        limitation, not a bug here.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Include the full traceback if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      placeholder: |
+        1. pip install cutile-gpt
+        2. python -c "..."
+    validations:
+      required: true
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      description: Output of the commands below.
+      value: |
+        <!-- paste output -->
+        nvidia-smi --query-gpu=name,driver_version,compute_cap --format=csv
+        nvcc --version | tail -2
+        python -c "import cutile_gpt, cupy; print(cutile_gpt.__version__, cupy.__version__)"
+    validations:
+      required: true

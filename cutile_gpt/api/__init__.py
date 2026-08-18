@@ -18,23 +18,21 @@ Example:
 """
 
 from .config import (
-    TileConfig,
-    TensorSpec,
-    Layout,
     DType,
+    Layout,
+    TensorSpec,
+    TileConfig,
     configure_tiles,
 )
-
-from .tile_op import (
-    TileOp,
-    OpType,
-    OpNode,
-    tile,
-)
-
 from .profiler import (
-    DataProfile,
     DataAnalyzer,
+    DataProfile,
+)
+from .tile_op import (
+    OpNode,
+    OpType,
+    TileOp,
+    tile,
 )
 
 __all__ = [

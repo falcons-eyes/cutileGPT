@@ -10,10 +10,11 @@ Optimized with:
 """
 
 import math
-import cupy as cp
+
 import cuda.tile as ct
-from cuda.tile import RoundingMode as RMd
+import cupy as cp
 import numpy as np
+from cuda.tile import RoundingMode as RMd
 
 ConstInt = ct.Constant[int]
 ConstBool = ct.Constant[bool]

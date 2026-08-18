@@ -1,6 +1,5 @@
-from manim import *
 import numpy as np
-
+from manim import *
 
 # ==============================
 # Color Palette
@@ -839,8 +838,6 @@ class S11_Closing(Scene):
         )
 
         # Repeat bracket for 12 layers
-        bracket_start = blocks[2].get_top() + UP * 0.15
-        bracket_end = blocks[8].get_top() + UP * 0.15
         brace = Brace(VGroup(blocks[2], blocks[3], blocks[4], blocks[5], blocks[6], blocks[7], blocks[8]), UP, buff=0.1, color=C_TILE)
         brace_label = Text("x 12 layers", font_size=14, color=C_TILE).next_to(brace, UP, buff=0.05)
         self.play(GrowFromCenter(brace), FadeIn(brace_label), run_time=1)

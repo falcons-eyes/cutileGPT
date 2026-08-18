@@ -46,7 +46,7 @@ class CutileGPTIntro(Scene):
         cuda_code.next_to(problem_title, DOWN, buff=0.6)
 
         self.play(
-            LaggedStart(*[FadeIn(l, shift=RIGHT * 0.3) for l in cuda_code], lag_ratio=0.15),
+            LaggedStart(*[FadeIn(line, shift=RIGHT * 0.3) for line in cuda_code], lag_ratio=0.15),
             run_time=2.5,
         )
         self.wait(0.5)
@@ -88,7 +88,7 @@ class CutileGPTIntro(Scene):
         tile_code.next_to(sol_title, DOWN, buff=0.6)
 
         self.play(
-            LaggedStart(*[FadeIn(l, shift=RIGHT * 0.3) for l in tile_code], lag_ratio=0.2),
+            LaggedStart(*[FadeIn(line, shift=RIGHT * 0.3) for line in tile_code], lag_ratio=0.2),
             run_time=2,
         )
         self.wait(0.5)

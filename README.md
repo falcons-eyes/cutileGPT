@@ -4,8 +4,9 @@
 
 A complete GPT implementation proving **declarative GPU programming** works. Using NVIDIA's CUDA Tile framework, cutileGPT achieves **8.3x speedup on GELU** and **matches PyTorch performance** (within 4%) - all with **~10MB footprint** vs PyTorch's ~2GB.
 
+[![CI](https://github.com/falcons-eyes/cutileGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/falcons-eyes/cutileGPT/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![CUDA](https://img.shields.io/badge/CUDA-13.0%2B-76b900.svg)](https://developer.nvidia.com/cuda-toolkit)
+[![CUDA](https://img.shields.io/badge/CUDA-13.1%2B-76b900.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Python](https://img.shields.io/badge/Python-3.13%2B-3776ab.svg)](https://www.python.org/)
 [![PyPI](https://img.shields.io/pypi/v/cutile-gpt.svg)](https://pypi.org/project/cutile-gpt/)
 
@@ -224,7 +225,7 @@ model.load_from_huggingface('gpt2')
 
 # Forward pass
 tokens = cp.array([[100, 200, 300]], dtype=cp.int32)
-logits = model.forward(tokens)  # (1, 3, vocab_size)
+logits, _ = model.forward(tokens)  # logits: (1, 3, vocab_size)
 
 # Generate text
 generated = model.generate(tokens, max_new_tokens=50)
@@ -237,8 +238,13 @@ generated = model.generate(tokens, max_new_tokens=50)
 ### Prerequisites
 
 - **Python 3.13+**
-- **CUDA 12.x or 13.x**
-- **NVIDIA GPU** with compute capability 10.0+ (Hopper) or 12.0+ (Blackwell)
+- **CUDA Toolkit 13.1+** - required by `tileiras`, the Tile IR compiler
+- **NVIDIA Driver r580+**
+- **NVIDIA Blackwell GPU** - `sm_100` (B200/GB200) or `sm_120` (GB10, RTX 50 series)
+
+> `tileiras` currently compiles for Blackwell only, so Hopper (`sm_90`) and
+> earlier are not supported yet. Upstream lists this as a temporary
+> restriction - see [cuTile Python system requirements](https://github.com/NVIDIA/cutile-python#system-requirements).
 
 ### Install from PyPI (Recommended)
 
@@ -356,7 +362,7 @@ model.load_from_huggingface('gpt2')
 
 # Forward pass
 tokens = cp.array([[100, 200, 300]], dtype=cp.int32)
-logits = model.forward(tokens)
+logits, _ = model.forward(tokens)
 
 # Generate
 generated = model.generate(
@@ -637,6 +643,23 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 - 📚 **[cutile_gpt/examples/](cutile_gpt/examples/)** - Educational tile programming tutorials
 - 📖 **[docs/TILE_PHILOSOPHY_DEMO.md](docs/TILE_PHILOSOPHY_DEMO.md)** - Complete philosophy documentation
 - 🏗️ **[docs/ARCHITECTURE_VISION.md](docs/ARCHITECTURE_VISION.md)** - Project vision & roadmap
+
+---
+
+## 🤝 Contributing
+
+Bug reports, benchmark numbers from other Blackwell GPUs, and documentation
+fixes are all welcome - see **[CONTRIBUTING.md](CONTRIBUTING.md)** for setup and
+the checks CI runs.
+
+Published performance numbers come from a single NVIDIA GB10, so results from
+different hardware are especially useful; there is a
+[benchmark result](https://github.com/falcons-eyes/cutileGPT/issues/new?template=benchmark_result.yml)
+issue template for exactly that. Open-ended questions belong in
+[Discussions](https://github.com/falcons-eyes/cutileGPT/discussions).
+
+You do not need a GPU to contribute - CI is GPU-free, and docs, packaging, and
+the visualization scripts all run without one.
 
 ---
 

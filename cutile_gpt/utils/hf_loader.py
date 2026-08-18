@@ -7,7 +7,8 @@ Utilities for loading GPT-2 weights from HuggingFace transformers.
 Requires: pip install cutile-gpt[hf]
 """
 
-from typing import Dict, Tuple, Any
+from typing import Any, Dict, Tuple
+
 import cupy as cp
 
 # Check for optional dependency

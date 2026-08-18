@@ -5,8 +5,8 @@ Benchmarking Utilities
 Tools for measuring performance of cutile GPT models.
 """
 
-import time
-from typing import Dict, Callable, Any
+from typing import Callable, Dict
+
 import cupy as cp
 
 
@@ -124,7 +124,7 @@ def compare_benchmarks(name1: str, stats1: Dict, name2: str, stats2: Dict):
     """Compare two benchmark results."""
     speedup = stats1['mean_ms'] / stats2['mean_ms']
 
-    print(f"\n--- Comparison ---")
+    print("\n--- Comparison ---")
     print(f"{name1}: {stats1['mean_ms']:.3f} ms")
     print(f"{name2}: {stats2['mean_ms']:.3f} ms")
 

@@ -6,9 +6,8 @@ cutile requires tile sizes to be powers of 2.
 We pad dimensions and slice back.
 """
 
-import math
-import cupy as cp
 import cuda.tile as ct
+import cupy as cp
 
 ConstInt = ct.Constant[int]
 PAD_ZERO = ct.PaddingMode.ZERO

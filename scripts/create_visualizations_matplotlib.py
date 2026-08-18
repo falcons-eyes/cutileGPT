@@ -6,11 +6,11 @@ Create performance visualizations for cutileGPT README using matplotlib.
 This creates publication-quality static images.
 """
 
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import numpy as np
 import json
 from pathlib import Path
+
+import matplotlib.pyplot as plt
+import numpy as np
 
 # Set style
 plt.style.use('seaborn-v0_8-darkgrid')

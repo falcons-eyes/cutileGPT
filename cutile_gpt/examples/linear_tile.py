@@ -15,8 +15,8 @@ Compare this with traditional CUDA where you'd manually:
 - Handle edge cases and padding
 """
 
-import cupy as cp
 import cuda.tile as ct
+import cupy as cp
 
 ConstInt = ct.Constant[int]
 

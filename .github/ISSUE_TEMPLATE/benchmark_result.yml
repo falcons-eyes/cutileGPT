@@ -1,0 +1,23 @@
+name: Benchmark result
+description: Share numbers from hardware the maintainers do not have
+labels: [benchmark]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Published numbers come from a single NVIDIA GB10. Results from other
+        Blackwell parts make the performance claims verifiable - thank you.
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: "RTX 5090 (sm_120), driver 580.xx, CUDA 13.1"
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output of scripts/profile_performance.py
+      render: json
+    validations:
+      required: true

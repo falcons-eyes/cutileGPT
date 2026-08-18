@@ -11,7 +11,7 @@ Optional utilities:
 """
 
 # Core utilities (always available)
-from .benchmark import benchmark_cupy, print_benchmark_result, compare_benchmarks
+from .benchmark import benchmark_cupy, compare_benchmarks, print_benchmark_result
 
 # Optional: benchmark_torch (requires torch)
 try:

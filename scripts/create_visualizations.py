@@ -9,10 +9,11 @@ This script creates publication-quality visualizations using:
 - Kaleido for PNG/SVG export
 """
 
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 import json
 from pathlib import Path
+
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 
 class VisualizationCreator:
@@ -121,7 +122,7 @@ class VisualizationCreator:
                 x=models,
                 y=latencies,
                 marker_color='#3b82f6',
-                text=[f"{l:.2f} ms" for l in latencies],
+                text=[f"{lat:.2f} ms" for lat in latencies],
                 textposition='outside',
                 textfont=dict(size=12, color='black', family='Arial'),
                 name='Latency'

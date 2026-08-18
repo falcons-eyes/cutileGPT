@@ -7,18 +7,19 @@ Supports loading weights from HuggingFace and minGPT.
 """
 
 import math
-import cupy as cp
-from typing import Optional, Tuple, Dict
+from typing import Dict, Optional, Tuple
 
-from .config import GPTConfig
+import cupy as cp
+
 from ..kernels import (
-    cutile_gelu,
+    cutile_causal_attention,
     cutile_embedding,
+    cutile_gelu,
+    cutile_layer_norm,
     cutile_linear,
     cutile_linear_bias,
-    cutile_layer_norm,
-    cutile_causal_attention,
 )
+from .config import GPTConfig
 
 
 class CutileGPT:
