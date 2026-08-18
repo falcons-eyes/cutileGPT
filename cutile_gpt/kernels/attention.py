@@ -28,6 +28,7 @@ def causal_attention_kernel(
     qk_scale: float,
     TILE_D: ConstInt,
     N_HEAD: ConstInt,
+    N_KV_HEAD: ConstInt,
     TILE_M: ConstInt,
     TILE_N: ConstInt
 ):
@@ -36,12 +37,15 @@ def causal_attention_kernel(
 
     Args:
         Q: Query tensor (batch, n_head, seq_len, head_dim)
-        K: Key tensor (batch, n_head, seq_len, head_dim)
-        V: Value tensor (batch, n_head, seq_len, head_dim)
+        K: Key tensor (batch, n_kv_head, seq_len, head_dim)
+        V: Value tensor (batch, n_kv_head, seq_len, head_dim)
         Out: Output tensor (batch, n_head, seq_len, head_dim)
         qk_scale: Scale factor (1/sqrt(head_dim))
         TILE_D: Head dimension
-        N_HEAD: Number of attention heads
+        N_HEAD: Number of query heads
+        N_KV_HEAD: Number of key/value heads. Equal to N_HEAD for plain MHA;
+            smaller for GQA, where each KV head is shared by N_HEAD/N_KV_HEAD
+            query heads. Qwen3 uses 32/8, Muse Glimmer 32/2.
         TILE_M: Tile size for query sequence
         TILE_N: Tile size for key/value sequence
     """
@@ -50,6 +54,12 @@ def causal_attention_kernel(
 
     batch_idx = bid_y // N_HEAD
     head_idx = bid_y % N_HEAD
+
+    # Grouped-query attention lives entirely in this index. Every query head
+    # keeps its own tile of Q, but neighbouring heads read the same K and V,
+    # so the KV cache shrinks by N_HEAD/N_KV_HEAD. With N_KV_HEAD == N_HEAD
+    # it reduces to head_idx and the kernel is plain MHA again.
+    kv_head_idx = head_idx // (N_HEAD // N_KV_HEAD)
 
     # Scale for exp2 optimization
     qk_scale_log2 = qk_scale * INV_LOG_2
@@ -79,7 +89,7 @@ def causal_attention_kernel(
     # Loop over K, V blocks
     for j in range(0, Tc):
         # Load K tile (transposed for matmul) with latency hint and TMA
-        k = ct.load(K, index=(batch_idx, head_idx, 0, j),
+        k = ct.load(K, index=(batch_idx, kv_head_idx, 0, j),
                     shape=(1, 1, TILE_D, TILE_N),
                     order=(0, 1, 3, 2),
                     latency=2, allow_tma=True).reshape((TILE_D, TILE_N))
@@ -104,7 +114,7 @@ def causal_attention_kernel(
         acc = acc * alpha
 
         # Load V and accumulate with latency hint and TMA
-        v = ct.load(V, index=(batch_idx, head_idx, j, 0),
+        v = ct.load(V, index=(batch_idx, kv_head_idx, j, 0),
                     shape=(1, 1, TILE_N, TILE_D),
                     latency=4, allow_tma=True).reshape((TILE_N, TILE_D))
         p = p.astype(Q.dtype)
@@ -121,19 +131,23 @@ def cutile_causal_attention(
     q: cp.ndarray,
     k: cp.ndarray,
     v: cp.ndarray,
-    n_head: int
+    n_head: int,
+    n_kv_head: int | None = None,
 ) -> cp.ndarray:
     """
-    Compute causal multi-head self-attention.
+    Compute causal self-attention, multi-head or grouped-query.
 
     This function expects Q, K, V already projected and reshaped to
-    (batch, n_head, seq_len, head_dim).
+    (batch, n_head, seq_len, head_dim) and (batch, n_kv_head, seq_len, head_dim).
 
     Args:
         q: Query tensor (batch, n_head, seq_len, head_dim)
-        k: Key tensor (batch, n_head, seq_len, head_dim)
-        v: Value tensor (batch, n_head, seq_len, head_dim)
-        n_head: Number of attention heads
+        k: Key tensor (batch, n_kv_head, seq_len, head_dim)
+        v: Value tensor (batch, n_kv_head, seq_len, head_dim)
+        n_head: Number of query heads
+        n_kv_head: Number of key/value heads. Defaults to n_head, which is
+            plain MHA. Pass a smaller divisor of n_head for GQA - Qwen3 uses
+            32/8, Muse Glimmer 32/2, shrinking the KV cache 4x and 16x.
 
     Returns:
         Attention output (batch, n_head, seq_len, head_dim)
@@ -142,6 +156,18 @@ def cutile_causal_attention(
         raise ValueError("Tensors must be CuPy arrays on CUDA device")
 
     batch, n_head, seq_len, head_dim = q.shape
+
+    if n_kv_head is None:
+        n_kv_head = k.shape[1]
+    if n_head % n_kv_head != 0:
+        raise ValueError(
+            f"n_head ({n_head}) must be divisible by n_kv_head ({n_kv_head})"
+        )
+    if k.shape[1] != n_kv_head or v.shape[1] != n_kv_head:
+        raise ValueError(
+            f"K and V must have n_kv_head={n_kv_head} heads, "
+            f"got K={k.shape[1]} V={v.shape[1]}"
+        )
 
     # Ensure contiguous memory layout for better performance
     if not q.flags.c_contiguous:
@@ -170,7 +196,7 @@ def cutile_causal_attention(
         cp.cuda.get_current_stream(),
         (grid_x, grid_y, 1),
         causal_attention_kernel,
-        (q, k, v, out, qk_scale, head_dim, n_head, tile_m, tile_n)
+        (q, k, v, out, qk_scale, head_dim, n_head, n_kv_head, tile_m, tile_n)
     )
 
     return out

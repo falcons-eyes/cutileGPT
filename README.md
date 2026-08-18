@@ -233,6 +233,53 @@ generated = model.generate(tokens, max_new_tokens=50)
 
 ---
 
+## 🧩 Modern Architecture Primitives
+
+GPT-2 normalizes with LayerNorm, attends with MHA, and runs a GELU MLP. Every
+current open-weight model - Qwen3, Gemma, Llama, Muse Glimmer - swapped all
+three. Those replacements are kernels here too:
+
+| Primitive | GPT-2 | Modern | cutileGPT |
+|-----------|-------|--------|-----------|
+| Normalization | LayerNorm | RMSNorm | `cutile_rms_norm` |
+| Attention | MHA | GQA | `cutile_causal_attention(..., n_kv_head=)` |
+| MLP | GELU | SwiGLU | `cutile_swiglu_mlp` |
+| Position | learned | RoPE | not yet |
+
+```python
+from cutile_gpt import cutile_rms_norm, cutile_causal_attention, cutile_swiglu_mlp
+
+h = cutile_rms_norm(x, ln_weight, eps=1e-6)          # no mean, no bias
+attn = cutile_causal_attention(q, k, v, n_head=32, n_kv_head=2)
+out = cutile_swiglu_mlp(h, gate_proj, up_proj, down_proj)
+```
+
+`cutile_rms_norm(..., unit_offset=True)` scales by `1 + weight`, which is how
+Gemma stores its norm weights.
+
+**Grouped-query attention is one index.** Query heads keep their own tiles while
+neighbours share K and V:
+
+```python
+kv_head_idx = head_idx // (N_HEAD // N_KV_HEAD)
+```
+
+That single line is the entire difference from MHA - the online softmax, the TMA
+loads, and the exp2 path are untouched, and `n_kv_head == n_head` collapses back
+to plain MHA. The KV cache shrinks by the ratio: 4x at Qwen3's 32/8, 16x at Muse
+Glimmer's 32/2. Writing this by hand in CUDA would mean redoing thread indexing,
+shared-memory layout, and synchronization; declaratively it is an index change.
+
+A Muse Glimmer-shaped decoder layer (hidden 6656, 32/2 heads, head_dim 128,
+intermediate 19968 - 457M parameters) composed from these kernels matches
+PyTorch to 9.1e-04 relative. `cutile_linear` is bit-identical to torch's TF32
+matmul, so that residual is TF32 precision, not kernel error. See
+`tests/test_modern_arch.py`.
+
+RoPE is the remaining gap before a full modern layer runs end to end.
+
+---
+
 ## 🎯 Precision
 
 Kernels carry the dtype of the arrays handed to them - `float32`, `float16`, and

@@ -60,6 +60,8 @@ from .kernels import (
     cutile_layer_norm,
     cutile_linear,
     cutile_linear_bias,
+    cutile_rms_norm,
+    cutile_swiglu_mlp,
 )
 
 # =============================================================================
@@ -122,6 +124,8 @@ __all__ = [
     'cutile_layer_norm',
     'cutile_causal_attention',
     'cutile_fused_mlp',
+    'cutile_rms_norm',
+    'cutile_swiglu_mlp',
     # Utils
     'benchmark_cupy',
     'benchmark_torch',  # lazy import

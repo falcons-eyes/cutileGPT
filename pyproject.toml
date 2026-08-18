@@ -133,6 +133,7 @@ ignore = ["E501"]
 "scripts/comprehensive_comparison.py" = ["E402"]
 # pytest.importorskip has to run before the imports it guards.
 "tests/test_dtypes.py" = ["E402"]
+"tests/test_modern_arch.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
