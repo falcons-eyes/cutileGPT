@@ -19,6 +19,7 @@ from ..kernels import (
     cutile_linear,
     cutile_linear_bias,
 )
+from ..kernels.kv_cache import KVCache
 from .config import GPTConfig
 
 
@@ -107,23 +108,34 @@ class CutileGPT:
     def __call__(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
         return self.forward(idx)
 
-    def forward(self, idx: cp.ndarray) -> Tuple[cp.ndarray, None]:
+    def forward(self, idx: cp.ndarray, cache: "KVCache | None" = None
+                ) -> Tuple[cp.ndarray, None]:
         """
         Forward pass using cutile kernels.
 
         Args:
-            idx: Token indices (batch, seq_len)
+            idx: Token indices (batch, seq_len). With a cache, only the tokens
+                not already in it - one per step while decoding.
+            cache: Optional KVCache. When given, K and V for this call are
+                appended to it and attention runs against the full history, so
+                the prefix is not recomputed. Positions are taken from the
+                cache length, which is what keeps the position embedding right
+                for a single-token call.
 
         Returns:
             Tuple of (logits, None)
         """
         batch_size, seq_len = idx.shape
         cfg = self.config
-        assert seq_len <= cfg.block_size, f"Sequence length {seq_len} > block_size {cfg.block_size}"
+        past_len = cache.length if cache is not None else 0
+        total_len = past_len + seq_len
+        assert total_len <= cfg.block_size, (
+            f"Sequence length {total_len} > block_size {cfg.block_size}"
+        )
 
         # Embeddings
         tok_emb = cutile_embedding(idx, self.weights['wte'])
-        pos = cp.arange(0, seq_len, dtype=cp.int64)
+        pos = cp.arange(past_len, total_len, dtype=cp.int64)
         pos_emb = cutile_embedding(pos, self.weights['wpe'])
         x = tok_emb + cp.expand_dims(pos_emb, 0)
 
@@ -151,7 +163,11 @@ class CutileGPT:
             k = cp.transpose(cp.reshape(k, (batch_size, seq_len, cfg.n_head, head_dim)), (0, 2, 1, 3))
             v = cp.transpose(cp.reshape(v, (batch_size, seq_len, cfg.n_head, head_dim)), (0, 2, 1, 3))
 
-            # Attention
+            # Attention. With a cache, K and V cover the whole history while
+            # Q holds only the new tokens, and the kernel derives the query
+            # offset from the length difference.
+            if cache is not None:
+                k, v = cache.append(i, k, v)
             attn_out = cutile_causal_attention(q, k, v, cfg.n_head)
 
             # Reshape back
@@ -202,7 +218,8 @@ class CutileGPT:
         idx: cp.ndarray,
         max_new_tokens: int,
         temperature: float = 1.0,
-        top_k: Optional[int] = None
+        top_k: Optional[int] = None,
+        use_cache: bool = True,
     ) -> cp.ndarray:
         """
         Autoregressive generation.
@@ -212,13 +229,35 @@ class CutileGPT:
             max_new_tokens: Number of tokens to generate
             temperature: Sampling temperature
             top_k: If set, only sample from top k tokens
+            use_cache: Keep K and V across steps instead of recomputing the
+                prefix every token. Without it the cost grows with the square
+                of the sequence. Pass False only to compare against that.
 
         Returns:
             Extended token sequence (batch, seq_len + max_new_tokens)
         """
-        for _ in range(max_new_tokens):
-            idx_cond = idx if idx.shape[1] <= self.config.block_size else idx[:, -self.config.block_size:]
-            logits, _ = self.forward(idx_cond)
+        cache = None
+        if use_cache:
+            head_dim = self.config.n_embd // self.config.n_head
+            cache = KVCache(
+                n_layer=self.config.n_layer,
+                batch=idx.shape[0],
+                n_kv_head=self.config.n_head,
+                max_seq_len=self.config.block_size,
+                head_dim=head_dim,
+                dtype=self.weights['wte'].dtype,
+            )
+
+        for step in range(max_new_tokens):
+            if cache is None:
+                idx_cond = (idx if idx.shape[1] <= self.config.block_size
+                            else idx[:, -self.config.block_size:])
+            elif step == 0:
+                idx_cond = idx          # prefill the whole prompt at once
+            else:
+                idx_cond = idx[:, -1:]  # then one token per step
+
+            logits, _ = self.forward(idx_cond, cache=cache)
             logits = logits[:, -1, :] / temperature
 
             if top_k is not None:

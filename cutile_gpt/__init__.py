@@ -53,6 +53,7 @@ from .api import (
     tile,
 )
 from .kernels import (
+    KVCache,
     cutile_causal_attention,
     cutile_embedding,
     cutile_fused_mlp,
@@ -103,6 +104,7 @@ def __getattr__(name):
 
 
 __all__ = [
+    'KVCache',
     # Version
     '__version__',
     # Models

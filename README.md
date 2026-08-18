@@ -2,13 +2,56 @@
 
 > **Pure Tile Programming Philosophy: Think in WHAT, not HOW**
 
-A complete GPT implementation proving **declarative GPU programming** works. Using NVIDIA's CUDA Tile framework, cutileGPT achieves **8.3x speedup on GELU** and **matches PyTorch performance** (within 4%) - all with **~10MB footprint** vs PyTorch's ~2GB.
+Transformer inference kernels written declaratively with NVIDIA's CUDA Tile
+framework - you say *what* each tile computes, the compiler decides *how*.
+
+The payoff is that architectures stay cheap to port. Grouped-query attention,
+the change that separates GPT-2's attention from every 2026 model's, is one
+index in a tile kernel; in hand-written CUDA it means reworking thread
+indexing, shared memory, and synchronization. Every primitive that current
+open-weight models are built from - RMSNorm, RoPE, GQA, SwiGLU, sliding-window
+attention, KV caching - is implemented here and checked against PyTorch.
+
+**8.3x on GELU**, PyTorch-level end-to-end speed, in a **~10MB footprint**
+against PyTorch's ~2GB.
 
 [![CI](https://github.com/falcons-eyes/cutileGPT/actions/workflows/ci.yml/badge.svg)](https://github.com/falcons-eyes/cutileGPT/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![CUDA](https://img.shields.io/badge/CUDA-13.1%2B-76b900.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![Python](https://img.shields.io/badge/Python-3.13%2B-3776ab.svg)](https://www.python.org/)
 [![PyPI](https://img.shields.io/pypi/v/cutile-gpt.svg)](https://pypi.org/project/cutile-gpt/)
+
+---
+
+## 🗂️ Architecture coverage
+
+GPT-2 normalizes with LayerNorm, embeds position once at the bottom, attends
+with MHA, and runs a GELU MLP. Qwen3, Gemma, Llama, DeepSeek, and Muse Glimmer
+changed all four. Those replacements are kernels here:
+
+| Primitive | GPT-2 | Current models | Status |
+|-----------|-------|----------------|--------|
+| Normalization | LayerNorm | RMSNorm | `cutile_rms_norm` |
+| Position | learned embedding | RoPE | `cutile_rope` |
+| Attention | MHA | GQA | `cutile_causal_attention(n_kv_head=)` |
+| MLP | GELU | SwiGLU | `cutile_swiglu_mlp` |
+| Long context | - | sliding window | `cutile_causal_attention(window=)` |
+| Decoding | - | KV cache | `KVCache` |
+| Weights | fp32 | bfloat16 | native, no conversion |
+
+Composed, they reproduce a **Muse Glimmer decoder layer** - hidden 6656, 32
+query heads over 2 KV heads, head_dim 128, intermediate 19968, RoPE base
+500000, 457M parameters - to **8.4e-04 relative** against PyTorch, which is TF32
+precision rather than kernel error.
+
+**What is not here yet:** a loader that reads `safetensors` and a `config.json`
+directly. Weights currently come in through `transformers`, and the only
+end-to-end model wired up is GPT-2. The kernels a Qwen3 or Glimmer layer needs
+all exist and are tested; assembling a full model from a downloaded checkpoint
+is the next step, not a finished one.
+
+MoE routing (DeepSeek V4, Kimi) and MLA are not implemented - those models are
+also far past what a single GPU holds.
 
 ---
 
@@ -239,13 +282,6 @@ GPT-2 normalizes with LayerNorm, attends with MHA, and runs a GELU MLP. Every
 current open-weight model - Qwen3, Gemma, Llama, Muse Glimmer - swapped all
 three. Those replacements are kernels here too:
 
-| Primitive | GPT-2 | Modern | cutileGPT |
-|-----------|-------|--------|-----------|
-| Normalization | LayerNorm | RMSNorm | `cutile_rms_norm` |
-| Position | learned | RoPE | `cutile_rope` |
-| Attention | MHA | GQA | `cutile_causal_attention(..., n_kv_head=)` |
-| MLP | GELU | SwiGLU | `cutile_swiglu_mlp` |
-
 ```python
 from cutile_gpt import (
     cutile_causal_attention, cutile_rms_norm, cutile_rope,
@@ -288,8 +324,49 @@ kernels matches PyTorch to **8.4e-04 relative**. `cutile_linear` is
 bit-identical to torch's TF32 matmul, so that residual is TF32 precision, not
 kernel error. See `tests/test_modern_arch.py`.
 
-Still missing for end-to-end inference on a real checkpoint: a safetensors
-loader, a KV cache, and sliding-window attention.
+### Decoding
+
+Generating without a cache re-runs attention over the whole prefix at every
+step, so cost grows with the square of the sequence. `KVCache` keeps K and V
+across steps; `generate()` uses it by default.
+
+```python
+logits, _ = model.forward(idx, cache=cache)   # idx is one token after prefill
+out = model.generate(tokens, max_new_tokens=512)             # cached
+slow = model.generate(tokens, max_new_tokens=512, use_cache=False)
+```
+
+GPT-2 (12 layers, 768 dims) on GB10, measured after warm-up:
+
+| new tokens | cached | uncached | speedup |
+|-----------:|-------:|---------:|--------:|
+| 64 | 453 ms | 483 ms | 1.07x |
+| 128 | 951 ms | 1092 ms | 1.15x |
+| 256 | 2090 ms | 2913 ms | 1.39x |
+| 512 | 4924 ms | 10518 ms | 2.14x |
+
+The gap widens with length because the cache removes the quadratic term. What
+is left is per-step fixed cost - a single-token forward is 6.9 ms and sampling
+accounts for 3% of it, so the remainder is launch overhead across 12 layers,
+not attention.
+
+The cache holds `n_kv_head` heads, not `n_head`, so GQA shrinks it by the same
+ratio it shrinks the kernel's loads: 16x at Glimmer's 32/2.
+
+### Sliding-window attention
+
+Gemma alternates local and global layers 5:1, Muse Glimmer 3:1 at width 2048.
+`window=` skips the KV tiles that fall entirely outside the window rather than
+loading and masking them:
+
+```python
+local = cutile_causal_attention(q, k, v, n_head, n_kv_head, window=2048)
+glob = cutile_causal_attention(q, k, v, n_head, n_kv_head)   # window=0
+```
+
+Still missing for end-to-end inference on a downloaded checkpoint: a loader
+that reads `safetensors` and `config.json` directly, and a model class that
+assembles these kernels from it.
 
 ---
 
@@ -726,11 +803,23 @@ cutileGPT demonstrates that **Tile Programming Philosophy** is practical:
 - [x] **HuggingFace Integration** - Load pre-trained GPT-2 weights
 - [x] **Hierarchical Architecture** - Clean separation (api, models, kernels, utils)
 
-### Future Work 🔮
-- [ ] FP16/BF16 support for 2-3x speedup
-- [ ] KV cache for efficient generation
-- [ ] Multi-GPU support via NCCL
-- [ ] INT8 quantization kernels
+- [x] **bfloat16** - native, the dtype open-weight checkpoints ship in
+- [x] **RMSNorm, RoPE, GQA, SwiGLU** - the primitives current models use
+- [x] **KV cache and sliding-window attention**
+
+### Next 🔜
+- [ ] **safetensors loader** - read weights and `config.json` without going
+      through `transformers`, so a downloaded checkpoint can be run directly
+- [ ] **Model class driven by config** - assemble the kernels above from an
+      architecture description rather than hardcoding GPT-2's graph
+- [ ] Per-layer attention patterns - Glimmer and Gemma alternate local and
+      global layers, which the kernel supports but no model wires up yet
+
+### Later 🔮
+- [ ] fp8 weights - `cuda.tile` compiles `float8_e4m3fn`/`e5m2` already; cupy
+      cannot import them over DLPack, so it needs the direct-torch path
+- [ ] MoE routing - DeepSeek V4 and Kimi, though both exceed a single GPU
+- [ ] Multi-GPU via NCCL
 - [ ] Auto-tuning for tile sizes
 
 ---
