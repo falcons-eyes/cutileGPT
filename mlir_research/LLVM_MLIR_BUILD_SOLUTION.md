@@ -30,8 +30,9 @@ cmake -G Ninja \
 
 ```bash
 # 1. 빌드 디렉토리 생성 및 이동
-mkdir -p /home/hwoo_joo/github/cutileGPT/build/llvm
-cd /home/hwoo_joo/github/cutileGPT/build/llvm
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
+mkdir -p "${PROJECT_ROOT}/build/llvm"
+cd "${PROJECT_ROOT}/build/llvm"
 
 # 2. CMake 설정 (빌드 디렉토리 내부에서 실행)
 cmake ../../external/llvm-project/llvm \
@@ -112,7 +113,7 @@ ls tools/llvm/lib/cmake/mlir/
 #!/bin/bash
 set -e
 
-PROJECT_ROOT="/home/hwoo_joo/github/cutileGPT"
+PROJECT_ROOT="$(git rev-parse --show-toplevel)"
 LLVM_SRC="${PROJECT_ROOT}/external/llvm-project"
 LLVM_BUILD="${PROJECT_ROOT}/build/llvm"
 LLVM_INSTALL="${PROJECT_ROOT}/tools/llvm"
