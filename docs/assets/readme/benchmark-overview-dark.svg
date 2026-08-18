@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="660" viewBox="0 0 1200 660" role="img" aria-labelledby="title desc">
+<title id="title">cutileGPT benchmark overview</title>
+<desc id="desc">Three heatmaps show PyTorch latency divided by cutileGPT latency for nano, small, and medium models across four batches and three sequence lengths.</desc>
+<defs>
+<filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+<feDropShadow dx="0" dy="7" stdDeviation="11" flood-color="#000000" flood-opacity="0.12"/>
+</filter>
+</defs>
+<rect x="0" y="0" width="1200" height="660" rx="26" fill="#0B1020" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="54" y="48" fill="#70D9EC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="800" text-anchor="start" opacity="1.0" letter-spacing="1.8">36-CONFIGURATION BENCHMARK</text>
+<text x="54" y="87" fill="#F3F7FC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="27" font-weight="750" text-anchor="start" opacity="1.0" letter-spacing="0">End-to-end performance moves toward parity with more work</text>
+<text x="54" y="116" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="15" font-weight="400" text-anchor="start" opacity="1.0" letter-spacing="0">PyTorch latency ÷ cutileGPT latency · NVIDIA GB10 · higher is better</text>
+<g filter="url(#shadow)"><rect x="48" y="154" width="360" height="390" rx="18" fill="#121A2D" stroke="#2A3855" stroke-width="1" opacity="1.0"/></g>
+<text x="70" y="192" fill="#F3F7FC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="21" font-weight="750" text-anchor="start" opacity="1.0" letter-spacing="0">Nano</text>
+<text x="386" y="190" fill="#70D9EC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="800" text-anchor="end" opacity="1.0" letter-spacing="0">best  1.011x</text>
+<text x="70" y="215" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="400" text-anchor="start" opacity="1.0" letter-spacing="0">3 layers · 48 hidden</text>
+<text x="106" y="249" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">batch</text>
+<text x="166.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 64</text>
+<text x="254.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 128</text>
+<text x="342.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 256</text>
+<text x="106" y="305" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">1</text>
+<rect x="126" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="166.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.664x</text>
+<rect x="214" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="254.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.682x</text>
+<rect x="302" y="270" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="342.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.795x</text>
+<text x="106" y="371" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">4</text>
+<rect x="126" y="336" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="166.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.772x</text>
+<rect x="214" y="336" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="254.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.903x</text>
+<rect x="302" y="336" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="342.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.936x</text>
+<text x="106" y="437" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">8</text>
+<rect x="126" y="402" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="166.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.912x</text>
+<rect x="214" y="402" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="254.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.921x</text>
+<rect x="302" y="402" width="80" height="58" rx="10" fill="#16866A" stroke="#64D6A0" stroke-width="3" opacity="1.0"/>
+<text x="342.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">1.011x</text>
+<text x="106" y="503" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">16</text>
+<rect x="126" y="468" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="166.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.915x</text>
+<rect x="214" y="468" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="254.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.915x</text>
+<rect x="302" y="468" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="342.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.846x</text>
+<g filter="url(#shadow)"><rect x="420" y="154" width="360" height="390" rx="18" fill="#121A2D" stroke="#2A3855" stroke-width="1" opacity="1.0"/></g>
+<text x="442" y="192" fill="#F3F7FC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="21" font-weight="750" text-anchor="start" opacity="1.0" letter-spacing="0">Small</text>
+<text x="758" y="190" fill="#70D9EC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="800" text-anchor="end" opacity="1.0" letter-spacing="0">best  0.971x</text>
+<text x="442" y="215" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="400" text-anchor="start" opacity="1.0" letter-spacing="0">6 layers · 384 hidden</text>
+<text x="478" y="249" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">batch</text>
+<text x="538.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 64</text>
+<text x="626.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 128</text>
+<text x="714.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 256</text>
+<text x="478" y="305" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">1</text>
+<rect x="498" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="538.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.519x</text>
+<rect x="586" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="626.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.594x</text>
+<rect x="674" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="714.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.667x</text>
+<text x="478" y="371" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">4</text>
+<rect x="498" y="336" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="538.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.665x</text>
+<rect x="586" y="336" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="626.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.782x</text>
+<rect x="674" y="336" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="714.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.743x</text>
+<text x="478" y="437" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">8</text>
+<rect x="498" y="402" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="538.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.684x</text>
+<rect x="586" y="402" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="626.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.762x</text>
+<rect x="674" y="402" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="714.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.755x</text>
+<text x="478" y="503" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">16</text>
+<rect x="498" y="468" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="538.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.738x</text>
+<rect x="586" y="468" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="626.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.909x</text>
+<rect x="674" y="468" width="80" height="58" rx="10" fill="#24695E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="714.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.971x</text>
+<g filter="url(#shadow)"><rect x="792" y="154" width="360" height="390" rx="18" fill="#121A2D" stroke="#2A3855" stroke-width="1" opacity="1.0"/></g>
+<text x="814" y="192" fill="#F3F7FC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="21" font-weight="750" text-anchor="start" opacity="1.0" letter-spacing="0">Medium</text>
+<text x="1130" y="190" fill="#70D9EC" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="800" text-anchor="end" opacity="1.0" letter-spacing="0">best  0.977x</text>
+<text x="814" y="215" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="400" text-anchor="start" opacity="1.0" letter-spacing="0">8 layers · 512 hidden</text>
+<text x="850" y="249" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">batch</text>
+<text x="910.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 64</text>
+<text x="998.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 128</text>
+<text x="1086.0" y="250" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="700" text-anchor="middle" opacity="1.0" letter-spacing="0">seq 256</text>
+<text x="850" y="305" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">1</text>
+<rect x="870" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="910.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.675x</text>
+<rect x="958" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="998.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.564x</text>
+<rect x="1046" y="270" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="1086.0" y="305" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.670x</text>
+<text x="850" y="371" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">4</text>
+<rect x="870" y="336" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="910.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.660x</text>
+<rect x="958" y="336" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="998.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.466x</text>
+<rect x="1046" y="336" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="1086.0" y="371" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.742x</text>
+<text x="850" y="437" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">8</text>
+<rect x="870" y="402" width="80" height="58" rx="10" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="910.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.430x</text>
+<rect x="958" y="402" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="998.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.793x</text>
+<rect x="1046" y="402" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="1086.0" y="437" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.804x</text>
+<text x="850" y="503" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="13" font-weight="700" text-anchor="end" opacity="1.0" letter-spacing="0">16</text>
+<rect x="870" y="468" width="80" height="58" rx="10" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="910.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.713x</text>
+<rect x="958" y="468" width="80" height="58" rx="10" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="998.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.898x</text>
+<rect x="1046" y="468" width="80" height="58" rx="10" fill="#24695E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="1086.0" y="503" fill="#FFFFFF" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="14" font-weight="800" text-anchor="middle" opacity="1.0" letter-spacing="0">0.977x</text>
+<rect x="208" y="586" width="24" height="16" rx="5" fill="#7D3E52" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="242" y="599" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="650" text-anchor="start" opacity="1.0" letter-spacing="0">&lt; 0.70</text>
+<rect x="368" y="586" width="24" height="16" rx="5" fill="#70561E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="402" y="599" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="650" text-anchor="start" opacity="1.0" letter-spacing="0">0.70–0.84</text>
+<rect x="528" y="586" width="24" height="16" rx="5" fill="#285D70" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="562" y="599" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="650" text-anchor="start" opacity="1.0" letter-spacing="0">0.85–0.94</text>
+<rect x="688" y="586" width="24" height="16" rx="5" fill="#24695E" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="722" y="599" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="650" text-anchor="start" opacity="1.0" letter-spacing="0">0.95–0.99</text>
+<rect x="848" y="586" width="24" height="16" rx="5" fill="#16866A" stroke="none" stroke-width="1" opacity="1.0"/>
+<text x="882" y="599" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="11" font-weight="650" text-anchor="start" opacity="1.0" letter-spacing="0">≥ 1.00</text>
+<text x="600" y="635" fill="#A3B0C4" font-family="Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="12" font-weight="400" text-anchor="middle" opacity="1.0" letter-spacing="0">Ratio ≥ 1.0 means cutileGPT is faster for that configuration</text>
+</svg>
